@@ -16,6 +16,7 @@ namespace PanPlugin
         private Button _btnImportRefund;
         private Button _btnBackup;
         private Button _btnArchive;
+        private Button _btnAliases;
         private CheckBox _chkShowArchived;
         private ListBox _lstCustomers;
         private Label _lblName;
@@ -157,6 +158,17 @@ namespace PanPlugin
             right.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
             _lblName = new Label { Text = "（未选择客户）", AutoSize = true, Font = new Font("Microsoft YaHei UI", 12F, FontStyle.Bold), Padding = new Padding(8, 6, 3, 0) };
+            _btnAliases = new Button { Text = "管理别名…", Width = 100, Height = 24, Enabled = false, Margin = new Padding(6, 10, 0, 0) };
+            _btnAliases.Click += (s, e) => ManageAliases();
+            var namePanel = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false
+            };
+            namePanel.Controls.Add(_lblName);
+            namePanel.Controls.Add(_btnAliases);
             _lblPending = new Label { Text = "", AutoSize = true, Padding = new Padding(10, 0, 3, 0), ForeColor = Color.Firebrick };
             _lblBalance = new Label { Text = "", AutoSize = true, Padding = new Padding(10, 0, 3, 4), ForeColor = Color.SeaGreen };
 
@@ -182,7 +194,7 @@ namespace PanPlugin
             creditBtns.Controls.Add(_btnDeduct);
             creditBtns.Controls.Add(_btnUndo);
 
-            right.Controls.Add(_lblName, 0, 0);
+            right.Controls.Add(namePanel, 0, 0);
             right.Controls.Add(_lblPending, 0, 1);
             right.Controls.Add(_lblBalance, 0, 2);
             right.Controls.Add(_lvPending, 0, 3);
@@ -306,6 +318,7 @@ namespace PanPlugin
                 _btnArchive.Enabled = _current != null;
                 _btnArchive.Text = (_current != null && _current.Archived) ? "恢复该客户" : "归档所选客户…";
             }
+            if (_btnAliases != null) _btnAliases.Enabled = _current != null;
 
             if (_current == null)
             {
@@ -478,12 +491,13 @@ namespace PanPlugin
                 Customer target = _store.Customers.FirstOrDefault(c => c.Matches(g.RawName));
                 if (target == null)
                 {
-                    // 模糊候选：互相包含
+                    // 模糊候选：互相包含，且排除用户已明确解除过关联的客户
                     var candidates = _store.Customers.Where(c =>
-                        c.Name.IndexOf(g.RawName, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        g.RawName.IndexOf(c.Name, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        c.Aliases.Any(a => a.IndexOf(g.RawName, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                           g.RawName.IndexOf(a, StringComparison.OrdinalIgnoreCase) >= 0)).ToList();
+                        !_store.ExcludedLinks.Contains(Store.LinkKey(g.RawName, c.Id)) &&
+                        (c.Name.IndexOf(g.RawName, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         g.RawName.IndexOf(c.Name, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         c.Aliases.Any(a => a.IndexOf(g.RawName, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                            g.RawName.IndexOf(a, StringComparison.OrdinalIgnoreCase) >= 0))).ToList();
 
                     using (var dlg = new LinkCustomerForm(g.RawName, candidates))
                     {
@@ -540,6 +554,26 @@ namespace PanPlugin
         }
 
         // ---------- 操作 ----------
+
+        /// <summary>打开别名管理；取消不改动，确定后落盘并刷新。</summary>
+        private void ManageAliases()
+        {
+            if (_current == null)
+            {
+                MessageBox.Show(this, "请先在左侧列表选中一个客户。", "生化盘插件");
+                return;
+            }
+
+            using (var dlg = new AliasManagerForm(_current, _store))
+            {
+                if (dlg.ShowDialog(this) != DialogResult.OK || !dlg.Changed) return;
+                var name = _current.Name;
+                _store.Save();
+                RefreshList();
+                RefreshDetail();
+                SetStatus("已更新「" + name + "」的名称与别名；被移除的别名不会再自动绑回该客户。");
+            }
+        }
 
         /// <summary>
         /// 归档/恢复。归档只加标记，档案、别名、账目全部保留；

@@ -16,6 +16,8 @@ namespace PanPlugin
         public List<LedgerEntry> Entries { get; set; } = new List<LedgerEntry>();
         /// <summary>已导入过的外部记录指纹（防重复导入）。</summary>
         public HashSet<string> ImportedRefs { get; set; } = new HashSet<string>(StringComparer.Ordinal);
+        /// <summary>被用户解除的「名字↔客户」关联，防止下次导入又被模糊候选重新绑错。</summary>
+        public HashSet<string> ExcludedLinks { get; set; } = new HashSet<string>(StringComparer.Ordinal);
         /// <summary>上次使用的导入文件夹。</summary>
         public string LastFolder { get; set; }
 
@@ -43,6 +45,7 @@ namespace PanPlugin
                         if (s.Customers == null) s.Customers = new List<Customer>();
                         if (s.Entries == null) s.Entries = new List<LedgerEntry>();
                         if (s.ImportedRefs == null) s.ImportedRefs = new HashSet<string>(StringComparer.Ordinal);
+                        if (s.ExcludedLinks == null) s.ExcludedLinks = new HashSet<string>(StringComparer.Ordinal);
                         s.MigratePeriods();
                         return s;
                     }
@@ -64,6 +67,12 @@ namespace PanPlugin
             File.WriteAllText(tmp, json);
             if (File.Exists(FilePath)) File.Delete(FilePath);
             File.Move(tmp, FilePath);
+        }
+
+        /// <summary>「名字↔客户」排除键：名字归一化小写 + 客户 Id。</summary>
+        public static string LinkKey(string rawName, string customerId)
+        {
+            return (rawName ?? "").Trim().ToLowerInvariant() + "|" + (customerId ?? "");
         }
 
         /// <summary>
