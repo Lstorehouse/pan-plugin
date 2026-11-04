@@ -29,6 +29,8 @@ namespace PanPlugin
         private Button _btnAddCredit;
         private Button _btnDeduct;
         private Button _btnUndo;
+        private Button _btnMoveEntries;
+        private Button _btnTransferLog;
         private StatusStrip _status;
         private ToolStripStatusLabel _statusText;
 
@@ -172,8 +174,9 @@ namespace PanPlugin
             _lblPending = new Label { Text = "", AutoSize = true, Padding = new Padding(10, 0, 3, 0), ForeColor = Color.Firebrick };
             _lblBalance = new Label { Text = "", AutoSize = true, Padding = new Padding(10, 0, 3, 4), ForeColor = Color.SeaGreen };
 
-            _lvPending = NewList(new[] { "工单号", "盘型", "张数", "日期", "备注" });
-            _lvHistory = NewList(new[] { "时间", "类型", "内容", "备注" });
+            // 两个列表都要能勾选：待补盘用于「标记已补发」，历史用于「转移到其他客户」
+            _lvPending = NewList(new[] { "工单号", "盘型", "张数", "日期", "备注" }, true);
+            _lvHistory = NewList(new[] { "时间", "类型", "内容", "备注" }, true);
 
             var pendingBtns = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, Height = 34, Padding = new Padding(8, 4, 0, 0) };
             _btnMarkDone = new Button { Text = "勾选项标记已补发", Width = 140 };
@@ -199,10 +202,27 @@ namespace PanPlugin
             right.Controls.Add(_lblBalance, 0, 2);
             right.Controls.Add(_lvPending, 0, 3);
             right.Controls.Add(_lvHistory, 0, 4);
-            var btnPanel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2 };
+            var transferBtns = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.LeftToRight,
+                AutoSize = true,
+                Padding = new Padding(8, 0, 0, 0)
+            };
+            _btnMoveEntries = new Button { Text = "所选记录转移到…", Width = 150, Enabled = false };
+            _btnMoveEntries.Click += (s, e) => MoveSelectedEntries();
+            _btnTransferLog = new Button { Text = "转移记录…", Width = 100 };
+            _btnTransferLog.Click += (s, e) => ShowTransferLog();
+            transferBtns.Controls.Add(_btnMoveEntries);
+            transferBtns.Controls.Add(_btnTransferLog);
+
+            var btnPanel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2 };
+            btnPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             btnPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             btnPanel.Controls.Add(pendingBtns, 0, 0);
             btnPanel.Controls.Add(creditBtns, 1, 0);
+            btnPanel.Controls.Add(transferBtns, 0, 1);
+            btnPanel.SetColumnSpan(transferBtns, 2);
             right.Controls.Add(btnPanel, 0, 5);
 
             split.Panel2.Controls.Add(right);
@@ -217,7 +237,7 @@ namespace PanPlugin
             split.SplitterDistance = 320;
         }
 
-        private static ListView NewList(string[] cols)
+        private static ListView NewList(string[] cols, bool checkBoxes = false)
         {
             var lv = new ListView
             {
@@ -226,7 +246,7 @@ namespace PanPlugin
                 FullRowSelect = true,
                 GridLines = true,
                 HideSelection = false,
-                CheckBoxes = false
+                CheckBoxes = checkBoxes
             };
             foreach (var c in cols)
                 lv.Columns.Add(c, c.Length > 2 ? 110 : 70);
@@ -319,6 +339,7 @@ namespace PanPlugin
                 _btnArchive.Text = (_current != null && _current.Archived) ? "恢复该客户" : "归档所选客户…";
             }
             if (_btnAliases != null) _btnAliases.Enabled = _current != null;
+            if (_btnMoveEntries != null) _btnMoveEntries.Enabled = _current != null;
 
             if (_current == null)
             {
@@ -555,6 +576,64 @@ namespace PanPlugin
 
         // ---------- 操作 ----------
 
+        /// <summary>把历史里勾选的记录逐条转移到另一个客户，并生成可整批撤销的日志。</summary>
+        private void MoveSelectedEntries()
+        {
+            if (_current == null)
+            {
+                MessageBox.Show(this, "请先在左侧列表选中一个客户。", "生化盘插件");
+                return;
+            }
+            var items = _lvHistory.Items.Cast<ListViewItem>().Where(i => i.Checked).ToList();
+            if (items.Count == 0)
+            {
+                MessageBox.Show(this, "请先在下方历史列表里勾选要转移的记录。", "生化盘插件");
+                return;
+            }
+            var others = _store.Customers.Where(c => c.Id != _current.Id).ToList();
+            if (others.Count == 0)
+            {
+                MessageBox.Show(this, "目前只有一个客户，没有可转移的目标。", "生化盘插件");
+                return;
+            }
+
+            using (var pick = new PickCustomerForm(others, "把所选 " + items.Count + " 条记录转移到："))
+            {
+                if (pick.ShowDialog(this) != DialogResult.OK || pick.Selected == null) return;
+                var target = pick.Selected;
+                var fromName = _current.Name;
+                if (MessageBox.Show(this,
+                        "确定把这 " + items.Count + " 条记录从「" + fromName + "」转移到「" + target.Name + "」吗？\n\n"
+                        + "转移后待补盘与抵扣余额会跟着变；可在「转移记录…」里整批撤销。",
+                        "确认转移", MessageBoxButtons.YesNo, MessageBoxIcon.Question,
+                        MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+
+                var ids = items.Select(i => ((LedgerEntry)i.Tag).Id).ToList();
+                var batch = _store.MoveEntries(ids, _current, target);
+                if (batch.Count == 0)
+                {
+                    MessageBox.Show(this, "没有可转移的记录（可能已被删除）。", "生化盘插件");
+                    return;
+                }
+                _store.Save();
+                RefreshList();
+                RefreshDetail();
+                SetStatus("已转移 " + batch.Count + " 条记录到「" + target.Name + "」，可在「转移记录…」里撤销。");
+            }
+        }
+
+        private void ShowTransferLog()
+        {
+            using (var dlg = new TransferLogForm(_store))
+            {
+                dlg.ShowDialog(this);
+                if (!dlg.Changed) return;
+                RefreshList();
+                RefreshDetail();
+                SetStatus("已撤销一次账目转移，请核对客户数据。");
+            }
+        }
+
         /// <summary>打开别名管理；取消不改动，确定后落盘并刷新。</summary>
         private void ManageAliases()
         {
@@ -629,7 +708,10 @@ namespace PanPlugin
         private void MarkDone()
         {
             if (_current == null) return;
-            var checkedItems = _lvPending.Items.Cast<ListViewItem>().Where(i => i.Checked).ToList();
+            // 已补发的条目本来就显示为勾选，这里只处理本次新勾选的，避免计数虚高
+            var checkedItems = _lvPending.Items.Cast<ListViewItem>()
+                .Where(i => i.Checked && i.Tag is LedgerEntry && !((LedgerEntry)i.Tag).Processed)
+                .ToList();
             if (checkedItems.Count == 0)
             {
                 MessageBox.Show("请先在待补清单里勾选要标记的条目。", "生化盘插件");

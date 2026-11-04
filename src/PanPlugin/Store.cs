@@ -18,6 +18,8 @@ namespace PanPlugin
         public HashSet<string> ImportedRefs { get; set; } = new HashSet<string>(StringComparer.Ordinal);
         /// <summary>被用户解除的「名字↔客户」关联，防止下次导入又被模糊候选重新绑错。</summary>
         public HashSet<string> ExcludedLinks { get; set; } = new HashSet<string>(StringComparer.Ordinal);
+        /// <summary>账目转移日志（可整批撤销）。</summary>
+        public List<TransferBatch> TransferBatches { get; set; } = new List<TransferBatch>();
         /// <summary>上次使用的导入文件夹。</summary>
         public string LastFolder { get; set; }
 
@@ -46,6 +48,7 @@ namespace PanPlugin
                         if (s.Entries == null) s.Entries = new List<LedgerEntry>();
                         if (s.ImportedRefs == null) s.ImportedRefs = new HashSet<string>(StringComparer.Ordinal);
                         if (s.ExcludedLinks == null) s.ExcludedLinks = new HashSet<string>(StringComparer.Ordinal);
+                        if (s.TransferBatches == null) s.TransferBatches = new List<TransferBatch>();
                         s.MigratePeriods();
                         return s;
                     }
@@ -73,6 +76,55 @@ namespace PanPlugin
         public static string LinkKey(string rawName, string customerId)
         {
             return (rawName ?? "").Trim().ToLowerInvariant() + "|" + (customerId ?? "");
+        }
+
+        /// <summary>逐条把账目从 from 搬到 to，生成一条可整批撤销的转移日志。</summary>
+        public TransferBatch MoveEntries(IEnumerable<string> entryIds, Customer from, Customer to)
+        {
+            var batch = new TransferBatch
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                At = DateTime.Now,
+                FromCustomerId = from.Id,
+                ToCustomerId = to.Id,
+                FromName = from.Name,
+                ToName = to.Name
+            };
+            foreach (var id in entryIds)
+            {
+                var e = Entries.FirstOrDefault(x => x.Id == id);
+                if (e == null || e.CustomerId != from.Id) continue;   // 已删除或不在源客户名下
+                e.CustomerId = to.Id;
+                batch.EntryIds.Add(id);
+            }
+            batch.Count = batch.EntryIds.Count;
+            if (batch.Count > 0) TransferBatches.Add(batch);
+            return batch;
+        }
+
+        /// <summary>
+        /// 整批撤销一次转移。已删除、已不在目标客户名下、或被更晚的转移批次重新处理过的
+        /// 条目会跳过，避免覆盖后续操作。返回实际搬回的条数。
+        /// </summary>
+        public int UndoTransfer(TransferBatch batch)
+        {
+            if (batch == null || batch.Undone) return 0;
+            int myIndex = TransferBatches.IndexOf(batch);
+            int n = 0;
+            foreach (var id in batch.EntryIds)
+            {
+                var e = Entries.FirstOrDefault(x => x.Id == id);
+                if (e == null || e.CustomerId != batch.ToCustomerId) continue;
+                bool superseded = myIndex >= 0 &&
+                    TransferBatches.Skip(myIndex + 1).Any(o => o.EntryIds.Contains(id));
+                if (superseded) continue;
+                e.CustomerId = batch.FromCustomerId;
+                n++;
+            }
+            batch.Undone = true;
+            batch.UndoneAt = DateTime.Now;
+            batch.UndoneCount = n;
+            return n;
         }
 
         /// <summary>

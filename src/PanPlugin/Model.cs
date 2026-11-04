@@ -114,6 +114,22 @@ namespace PanPlugin
         }
     }
 
+    /// <summary>一次「转移账目」操作的日志，用于整批撤销。</summary>
+    public class TransferBatch
+    {
+        public string Id { get; set; }
+        public DateTime At { get; set; }
+        public string FromCustomerId { get; set; }
+        public string ToCustomerId { get; set; }
+        public string FromName { get; set; }
+        public string ToName { get; set; }
+        public List<string> EntryIds { get; set; } = new List<string>();
+        public int Count { get; set; }
+        public bool Undone { get; set; }
+        public DateTime? UndoneAt { get; set; }
+        public int UndoneCount { get; set; }
+    }
+
     public enum EntryKind
     {
         BupanOrder,    // 补盘名单导入的工单（待补）
