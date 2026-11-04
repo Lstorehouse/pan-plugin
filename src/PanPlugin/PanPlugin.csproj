@@ -3,7 +3,6 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net48</TargetFramework>
-    <UseWindowsForms>true</UseWindowsForms>
     <LangVersion>7.3</LangVersion>
     <AssemblyName>PanPlugin</AssemblyName>
     <RootNamespace>PanPlugin</RootNamespace>
@@ -13,7 +12,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- net48 不是 Windows 特定 TFM，UseWindowsForms 不生效，需显式引用 WinForms 程序集 -->
+    <!-- 注意：不要加 UseWindowsForms —— 它会激活 WindowsDesktop targets，
+         对 net48 该机制会吞掉普通 Reference 项且不重新注入（CI 三连败教训）。
+         WinForms 程序集用下面的显式引用。 -->
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Drawing" />
   </ItemGroup>
