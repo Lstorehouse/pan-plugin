@@ -72,6 +72,85 @@ namespace PanPlugin
             File.Move(tmp, FilePath);
         }
 
+        /// <summary>列出可用备份（程序目录 + 回退目录，按文件名倒序＝最新在前）。</summary>
+        public static List<string> ListBackups()
+        {
+            var dirs = new List<string>
+            {
+                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Backups"),
+                Path.Combine(Dir, "Backups")
+            };
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var list = new List<string>();
+            foreach (var d in dirs)
+            {
+                if (!Directory.Exists(d)) continue;
+                foreach (var f in Directory.GetFiles(d, "store-*.json"))
+                    if (seen.Add(Path.GetFullPath(f))) list.Add(f);
+            }
+            list.Sort((a, b) => string.CompareOrdinal(Path.GetFileName(b), Path.GetFileName(a)));
+            return list;
+        }
+
+        /// <summary>
+        /// 从备份恢复：先校验 JSON，再把当前账本另存为 before-restore-*.json
+        /// （不匹配 store-*.json，不会被 3 份轮转删掉），最后原子替换 store.json。
+        /// 返回恢复前的账本路径。
+        /// </summary>
+        public static string RestoreFrom(string backupPath)
+        {
+            return RestoreFromTo(backupPath, FilePath, BackupDir());
+        }
+
+        /// <summary>
+        /// 恢复逻辑本体，路径可注入（便于在临时目录里验证，不触碰真实账本）。
+        /// targetFile 是目标账本，backupDir 是「恢复前现场」的保存目录。
+        /// </summary>
+        public static string RestoreFromTo(string backupPath, string targetFile, string backupDir)
+        {
+            if (!File.Exists(backupPath)) throw new Exception("备份文件不存在：" + backupPath);
+            var json = File.ReadAllText(backupPath);
+            var probe = JsonConvert.DeserializeObject<Store>(json);
+            if (probe == null || probe.Customers == null || probe.Entries == null)
+                throw new Exception("备份文件不是有效的账本。");
+
+            Directory.CreateDirectory(backupDir);
+            string safety = null;
+            if (File.Exists(targetFile))
+            {
+                safety = Path.Combine(backupDir, "before-restore-" + DateTime.Now.ToString("yyyyMMdd-HHmmss-fff") + ".json");
+                File.Copy(targetFile, safety, false);
+                // before-restore 也只留最近 3 份，避免无限堆积
+                var olds = Directory.GetFiles(backupDir, "before-restore-*.json")
+                    .OrderByDescending(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase)
+                    .Skip(3).ToList();
+                foreach (var f in olds) { try { File.Delete(f); } catch { } }
+            }
+
+            var tmp = targetFile + ".tmp";
+            File.WriteAllText(tmp, json);
+            if (File.Exists(targetFile)) File.Delete(targetFile);
+            File.Move(tmp, targetFile);
+            return safety;
+        }
+
+        /// <summary>
+        /// 把 source 客户并入 target：别名并过去、账目逐条转过去、移除 source 档案。
+        /// 账目转移会生成 TransferBatch 日志；档案移除不可逆，调用方需先自动备份。
+        /// </summary>
+        public TransferBatch MergeCustomer(Customer source, Customer target)
+        {
+            if (source == null || target == null || source.Id == target.Id) return null;
+            var ids = Entries.Where(e => e.CustomerId == source.Id).Select(e => e.Id).ToList();
+            var batch = MoveEntries(ids, source, target);
+            target.AddAlias(source.Name);
+            if (source.Aliases != null)
+                foreach (var a in source.Aliases) target.AddAlias(a);
+            Customers.Remove(source);
+            ExcludedLinks.RemoveWhere(k => k.EndsWith("|" + source.Id, StringComparison.Ordinal));
+            return batch;
+        }
+
         /// <summary>「名字↔客户」排除键：名字归一化小写 + 客户 Id。</summary>
         public static string LinkKey(string rawName, string customerId)
         {

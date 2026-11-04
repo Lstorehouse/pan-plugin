@@ -7,9 +7,9 @@ using System.Windows.Forms;
 namespace PanPlugin
 {
     /// <summary>
-    /// 管理客户主名与别名：改名、增删别名、把误绑的别名转移给另一个客户。
+    /// 管理客户主名与别名：改名、重命名别名、增删别名、把误绑的别名转移给另一个客户。
     /// 所有改动先在对话框内暂存，点「确定」才写入；取消不留痕迹。
-    /// 从本客户移除的名字会记入 Store.ExcludedLinks，防止下次导入又被模糊候选绑回来。
+    /// 从本客户移除/改掉的名字会记入 Store.ExcludedLinks，防止下次导入又被模糊候选绑回来。
     /// </summary>
     public class AliasManagerForm : Form
     {
@@ -25,6 +25,7 @@ namespace PanPlugin
 
         private readonly TextBox _txtName = new TextBox();
         private readonly ListBox _lst = new ListBox();
+        private readonly TextBox _txtEdit = new TextBox();
         private readonly TextBox _txtNew = new TextBox();
         private readonly ComboBox _cmb = new ComboBox();
 
@@ -41,51 +42,63 @@ namespace PanPlugin
             StartPosition = FormStartPosition.CenterParent;
             MaximizeBox = false;
             MinimizeBox = false;
-            ClientSize = new Size(540, 440);
+            ClientSize = new Size(540, 452);
 
-            var lblName = new Label { Text = "客户主名：", AutoSize = true, Location = new Point(16, 18) };
+            var lblName = new Label { Text = "客户主名：", AutoSize = true, Location = new Point(14, 18) };
             _txtName.Text = customer.Name;
             _txtName.Location = new Point(100, 14);
             _txtName.Width = 410;
 
-            var lblList = new Label { Text = "别名（选中后可删除或转移给别的客户）：", AutoSize = true, Location = new Point(16, 52) };
-            _lst.Location = new Point(16, 76);
-            _lst.Size = new Size(508, 150);
+            var lblList = new Label { Text = "别名（先选中，再改名／删除／转移）：", AutoSize = true, Location = new Point(14, 52) };
+            _lst.Location = new Point(14, 76);
+            _lst.Size = new Size(508, 140);
+            _lst.SelectedIndexChanged += (s, e) =>
+            {
+                _txtEdit.Text = (_lst.SelectedIndex >= 0 && _lst.SelectedIndex < _aliases.Count)
+                    ? _aliases[_lst.SelectedIndex] : "";
+            };
 
-            var btnDel = new Button { Text = "删除所选别名", Location = new Point(16, 234), Width = 122 };
+            var btnDel = new Button { Text = "删除所选别名", Location = new Point(14, 222), Width = 122 };
             btnDel.Click += (s, e) => DeleteSelected();
 
-            _cmb.Location = new Point(146, 234);
-            _cmb.Width = 226;
+            _cmb.Location = new Point(144, 222);
+            _cmb.Width = 224;
             _cmb.DropDownStyle = ComboBoxStyle.DropDownList;
             foreach (var c in _others)
                 _cmb.Items.Add(c.Name + (c.Archived ? "　（已归档）" : ""));
             if (_cmb.Items.Count > 0) _cmb.SelectedIndex = 0;
 
-            var btnMove = new Button { Text = "转移给该客户", Location = new Point(380, 234), Width = 140 };
+            var btnMove = new Button { Text = "转移给该客户", Location = new Point(376, 222), Width = 146 };
             btnMove.Click += (s, e) => MoveSelected();
 
-            var lblNew = new Label { Text = "新增别名：", AutoSize = true, Location = new Point(16, 278) };
-            _txtNew.Location = new Point(100, 274);
-            _txtNew.Width = 262;
-            var btnAdd = new Button { Text = "添加", Location = new Point(370, 273), Width = 90 };
+            var lblEdit = new Label { Text = "改名为：", AutoSize = true, Location = new Point(14, 262) };
+            _txtEdit.Location = new Point(76, 258);
+            _txtEdit.Width = 254;
+            var btnRename = new Button { Text = "应用改名", Location = new Point(338, 257), Width = 100 };
+            btnRename.Click += (s, e) => RenameSelected();
+
+            var lblNew = new Label { Text = "新增别名：", AutoSize = true, Location = new Point(14, 296) };
+            _txtNew.Location = new Point(76, 292);
+            _txtNew.Width = 254;
+            var btnAdd = new Button { Text = "添加", Location = new Point(338, 291), Width = 100 };
             btnAdd.Click += (s, e) => AddAlias();
 
             var hint = new Label
             {
-                Text = "移除别名后，下次导入同名数据会重新询问归属，不会再静默归到本客户。\n"
-                     + "注意：已经入账的补盘／抵扣记录不会自动搬走，如需迁移请用「转移账目」功能。",
+                Text = "改名／移除后，旧名字下次导入会重新询问归属，不会再静默绑回本客户。\n"
+                     + "若另一个客户其实是同一家（例如「黄强」独立成户），请用主界面的「合并到另一客户…」。",
                 AutoSize = true,
-                MaximumSize = new Size(500, 0),
-                Location = new Point(16, 316),
+                MaximumSize = new Size(508, 0),
+                Location = new Point(14, 332),
                 ForeColor = Color.DimGray
             };
 
-            var ok = new Button { Text = "确定", DialogResult = DialogResult.OK, Location = new Point(332, 396), Width = 92 };
-            var cancel = new Button { Text = "取消", DialogResult = DialogResult.Cancel, Location = new Point(432, 396), Width = 92 };
+            var ok = new Button { Text = "确定", DialogResult = DialogResult.OK, Location = new Point(332, 408), Width = 92 };
+            var cancel = new Button { Text = "取消", DialogResult = DialogResult.Cancel, Location = new Point(432, 408), Width = 92 };
 
             Controls.AddRange(new Control[] { lblName, _txtName, lblList, _lst, btnDel, _cmb, btnMove,
-                                             lblNew, _txtNew, btnAdd, hint, ok, cancel });
+                                             lblEdit, _txtEdit, btnRename, lblNew, _txtNew, btnAdd,
+                                             hint, ok, cancel });
             AcceptButton = ok;
             CancelButton = cancel;
 
@@ -120,6 +133,42 @@ namespace PanPlugin
             if (!_removed.Contains(a, StringComparer.OrdinalIgnoreCase)) _removed.Add(a);
             _aliases.RemoveAt(_lst.SelectedIndex);
             ReloadList();
+        }
+
+        /// <summary>直接修改别名文本：旧名字记为已解除关联，新名字成为别名。</summary>
+        private void RenameSelected()
+        {
+            if (_lst.SelectedIndex < 0 || _lst.SelectedIndex >= _aliases.Count) return;
+            int idx = _lst.SelectedIndex;
+            var oldName = _aliases[idx];
+            var newName = _txtEdit.Text.Trim();
+            if (newName.Length == 0)
+            {
+                MessageBox.Show(this, "请输入新的别名。", "生化盘插件");
+                return;
+            }
+            if (string.Equals(newName, oldName, StringComparison.OrdinalIgnoreCase)) return;
+            if (string.Equals(newName, _txtName.Text.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                MessageBox.Show(this, "这个名字已经是客户主名了。", "生化盘插件");
+                return;
+            }
+            if (_aliases.Any(a => string.Equals(a, newName, StringComparison.OrdinalIgnoreCase)))
+            {
+                MessageBox.Show(this, "该别名已存在。", "生化盘插件");
+                return;
+            }
+
+            _aliases[idx] = newName;
+            if (!_removed.Contains(oldName, StringComparer.OrdinalIgnoreCase)) _removed.Add(oldName);
+            _removed.RemoveAll(x => string.Equals(x, newName, StringComparison.OrdinalIgnoreCase));
+            for (int i = 0; i < _transfers.Count; i++)
+                if (string.Equals(_transfers[i].Key, oldName, StringComparison.OrdinalIgnoreCase))
+                    _transfers[i] = new KeyValuePair<string, string>(newName, _transfers[i].Value);
+
+            ReloadList();
+            _txtEdit.Text = "";
+            SetStatusHint("已暂存改名：「" + oldName + "」→「" + newName + "」");
         }
 
         private void MoveSelected()

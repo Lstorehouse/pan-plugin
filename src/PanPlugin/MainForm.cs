@@ -9,12 +9,14 @@ namespace PanPlugin
 {
     public class MainForm : Form
     {
-        private readonly Store _store = Store.Load();
+        private Store _store = Store.Load();   // 恢复备份后会整体替换，不能是 readonly
 
         private TextBox _txtSearch;
         private Button _btnImportBupan;
         private Button _btnImportRefund;
         private Button _btnBackup;
+        private Button _btnRestore;
+        private Button _btnMerge;
         private Button _btnArchive;
         private Button _btnAliases;
         private CheckBox _chkShowArchived;
@@ -102,6 +104,38 @@ namespace PanPlugin
             }
         }
 
+        /// <summary>从备份恢复：先落盘，再让 Store.RestoreFrom 自动另存现状，最后整体重载账本。</summary>
+        private void ShowRestoreBackup()
+        {
+            var files = Store.ListBackups();
+            if (files.Count == 0)
+            {
+                MessageBox.Show(this,
+                    "还没有可用的备份。\n备份位置：" + Store.BackupDir(),
+                    "生化盘插件");
+                return;
+            }
+            using (var dlg = new RestoreBackupForm(files))
+            {
+                if (dlg.ShowDialog(this) != DialogResult.OK || dlg.SelectedPath == null) return;
+                try
+                {
+                    _store.Save();
+                    var safety = Store.RestoreFrom(dlg.SelectedPath);
+                    _store = Store.Load();
+                    RefreshList();
+                    RefreshDetail();
+                    SetStatus("已从备份恢复：" + Path.GetFileName(dlg.SelectedPath)
+                        + "；恢复前的账本另存为 " + (safety != null ? Path.GetFileName(safety) : "（无）"));
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, "恢复失败：" + ex.Message, "生化盘插件",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+        }
+
         // ---------- UI 构建 ----------
 
         private void BuildUi()
@@ -129,9 +163,15 @@ namespace PanPlugin
             _btnImportRefund.Click += (s, e) => ImportRefund();
             _btnBackup = new Button { Text = "立即备份…", Width = 100 };
             _btnBackup.Click += (s, e) => BackupNow();
+            _btnRestore = new Button { Text = "恢复备份…", Width = 100 };
+            _btnRestore.Click += (s, e) => ShowRestoreBackup();
             _btnArchive = new Button { Text = "归档所选客户…", Width = 120, Enabled = false };
             _btnArchive.Click += (s, e) => ToggleArchive();
-            _chkShowArchived = new CheckBox { Text = "显示已归档", AutoSize = true, Margin = new Padding(8, 10, 3, 3) };
+            // 「显示已归档」放到左栏列表上方，避免顶部一排按钮挤不下
+            _chkShowArchived = new CheckBox
+            {
+                Text = "显示已归档", Dock = DockStyle.Fill, Margin = new Padding(8, 5, 0, 0)
+            };
             _chkShowArchived.CheckedChanged += (s, e) => RefreshList();
 
             top.Controls.Add(new Label { Text = "搜索客户：", AutoSize = true, Margin = new Padding(3, 8, 3, 3) });
@@ -139,8 +179,8 @@ namespace PanPlugin
             top.Controls.Add(_btnImportBupan);
             top.Controls.Add(_btnImportRefund);
             top.Controls.Add(_btnBackup);
+            top.Controls.Add(_btnRestore);
             top.Controls.Add(_btnArchive);
-            top.Controls.Add(_chkShowArchived);
 
             var split = new SplitContainer
             {
@@ -149,7 +189,12 @@ namespace PanPlugin
 
             _lstCustomers = new ListBox { Dock = DockStyle.Fill, Font = new Font("Microsoft YaHei UI", 9F) };
             _lstCustomers.SelectedIndexChanged += (s, e) => RefreshDetail();
-            split.Panel1.Controls.Add(_lstCustomers);
+            var left = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
+            left.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+            left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            left.Controls.Add(_chkShowArchived, 0, 0);
+            left.Controls.Add(_lstCustomers, 0, 1);
+            split.Panel1.Controls.Add(left);
 
             var right = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6 };
             right.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -213,8 +258,11 @@ namespace PanPlugin
             _btnMoveEntries.Click += (s, e) => MoveSelectedEntries();
             _btnTransferLog = new Button { Text = "转移记录…", Width = 100 };
             _btnTransferLog.Click += (s, e) => ShowTransferLog();
+            _btnMerge = new Button { Text = "合并到另一客户…", Width = 140, Enabled = false };
+            _btnMerge.Click += (s, e) => MergeCurrentCustomer();
             transferBtns.Controls.Add(_btnMoveEntries);
             transferBtns.Controls.Add(_btnTransferLog);
+            transferBtns.Controls.Add(_btnMerge);
 
             var btnPanel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2 };
             btnPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -340,6 +388,7 @@ namespace PanPlugin
             }
             if (_btnAliases != null) _btnAliases.Enabled = _current != null;
             if (_btnMoveEntries != null) _btnMoveEntries.Enabled = _current != null;
+            if (_btnMerge != null) _btnMerge.Enabled = _current != null;
 
             if (_current == null)
             {
@@ -575,6 +624,58 @@ namespace PanPlugin
         }
 
         // ---------- 操作 ----------
+
+        /// <summary>
+        /// 把当前客户并入另一个客户：源客户名与别名变成目标客户的别名，账目全部转过去，
+        /// 源客户档案移除。合并前自动生成一份备份，可用「恢复备份…」还原。
+        /// </summary>
+        private void MergeCurrentCustomer()
+        {
+            if (_current == null)
+            {
+                MessageBox.Show(this, "请先在左侧列表选中要并入的客户。", "生化盘插件");
+                return;
+            }
+            var others = _store.Customers.Where(c => c.Id != _current.Id).ToList();
+            if (others.Count == 0)
+            {
+                MessageBox.Show(this, "目前只有一个客户，没有可并入的目标。", "生化盘插件");
+                return;
+            }
+
+            var source = _current;
+            using (var pick = new PickCustomerForm(others, "把客户「" + source.Name + "」并入："))
+            {
+                if (pick.ShowDialog(this) != DialogResult.OK || pick.Selected == null) return;
+                var target = pick.Selected;
+                int count = _store.Entries.Count(e => e.CustomerId == source.Id);
+                if (MessageBox.Show(this,
+                        "确定把「" + source.Name + "」并入「" + target.Name + "」吗？\n\n"
+                        + "· 「" + source.Name + "」及其别名会成为目标客户的别名\n"
+                        + "· 其 " + count + " 条账目会转到目标客户名下\n"
+                        + "· 原客户档案会被移除\n\n"
+                        + "合并前会自动生成一份备份；如需还原请用「恢复备份…」。",
+                        "确认合并客户", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+                        MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+
+                try
+                {
+                    _store.Save();
+                    _store.Backup(3);              // 先留一份可还原的现场
+                    _store.MergeCustomer(source, target);
+                    _store.Save();
+                    RefreshList();
+                    RefreshDetail();
+                    SetStatus("已把「" + source.Name + "」并入「" + target.Name + "」，转移 "
+                        + count + " 条账目；可在「转移记录…」查看。");
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, "合并失败：" + ex.Message, "生化盘插件",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+        }
 
         /// <summary>把历史里勾选的记录逐条转移到另一个客户，并生成可整批撤销的日志。</summary>
         private void MoveSelectedEntries()
