@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Newtonsoft.Json;
 
 namespace PanPlugin
@@ -63,6 +64,53 @@ namespace PanPlugin
             File.WriteAllText(tmp, json);
             if (File.Exists(FilePath)) File.Delete(FilePath);
             File.Move(tmp, FilePath);
+        }
+
+        /// <summary>
+        /// 备份目录：优先程序目录下的 Backups（用户容易找到、可拷走）；
+        /// 程序装在只读位置时回退到 %APPDATA%\PanPlugin\Backups。
+        /// </summary>
+        public static string BackupDir()
+        {
+            try
+            {
+                var local = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Backups");
+                Directory.CreateDirectory(local);
+                var probe = Path.Combine(local, ".writetest");
+                File.WriteAllText(probe, "ok");
+                File.Delete(probe);
+                return local;
+            }
+            catch { }
+            return Path.Combine(Dir, "Backups");
+        }
+
+        /// <summary>备份当前账本；最多保留 maxKeep 份，超出删除最早的。返回备份文件路径。</summary>
+        public string Backup(int maxKeep = 3)
+        {
+            if (!File.Exists(FilePath)) Save();   // 全新安装还没落盘时先写一份
+            var dir = BackupDir();
+            Directory.CreateDirectory(dir);
+            var dest = Path.Combine(dir, "store-" + DateTime.Now.ToString("yyyyMMdd-HHmmss-fff") + ".json");
+            File.Copy(FilePath, dest, false);
+            RotateBackups(dir, maxKeep);
+            return dest;
+        }
+
+        /// <summary>按文件名（yyyyMMdd-HHmmss-fff，字典序即时间序）保留最新 maxKeep 份，删掉更早的。</summary>
+        public static int RotateBackups(string dir, int maxKeep)
+        {
+            if (!Directory.Exists(dir) || maxKeep < 1) return 0;
+            var files = Directory.GetFiles(dir, "store-*.json")
+                .OrderByDescending(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            int removed = 0;
+            for (int i = maxKeep; i < files.Count; i++)
+            {
+                try { File.Delete(files[i]); removed++; }
+                catch { }   // 备份文件被占用时不影响主流程
+            }
+            return removed;
         }
 
         /// <summary>

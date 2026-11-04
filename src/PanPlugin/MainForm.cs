@@ -14,6 +14,7 @@ namespace PanPlugin
         private TextBox _txtSearch;
         private Button _btnImportBupan;
         private Button _btnImportRefund;
+        private Button _btnBackup;
         private ListBox _lstCustomers;
         private Label _lblName;
         private Label _lblPending;
@@ -38,6 +39,62 @@ namespace PanPlugin
 
             BuildUi();
             RefreshList();
+            FormClosing += MainForm_FormClosing;
+        }
+
+        // ---------- 备份 ----------
+
+        /// <summary>关闭时询问是否备份；备份失败可放弃关闭，避免数据没备份就退出。</summary>
+        private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            var ans = MessageBox.Show(this,
+                "关闭前是否备份数据？\n\n备份位置：" + Store.BackupDir()
+                + "\n最多保留 3 份，超出自动删除最早的备份。",
+                "生化盘插件", MessageBoxButtons.YesNo, MessageBoxIcon.Question,
+                MessageBoxDefaultButton.Button1);
+            if (ans != DialogResult.Yes) return;
+
+            string path, err;
+            if (DoBackup(out path, out err)) return;
+
+            var keepClosing = MessageBox.Show(this,
+                "备份失败：" + err + "\n\n仍要关闭软件吗？",
+                "生化盘插件", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2);
+            if (keepClosing != DialogResult.Yes) e.Cancel = true;
+        }
+
+        private void BackupNow()
+        {
+            string path, err;
+            if (!DoBackup(out path, out err))
+            {
+                MessageBox.Show(this, "备份失败：" + err, "生化盘插件",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+            SetStatus("已备份：" + path);
+            MessageBox.Show(this,
+                "备份完成：\n" + path + "\n\n最多保留 3 份，超出会自动删除最早的备份。",
+                "生化盘插件", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        /// <summary>先落盘再复制，保证备份包含本次会话的全部改动（含旧账本迁移结果）。</summary>
+        private bool DoBackup(out string path, out string err)
+        {
+            path = null;
+            err = null;
+            try
+            {
+                _store.Save();
+                path = _store.Backup(3);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                err = ex.Message;
+                return false;
+            }
         }
 
         // ---------- UI 构建 ----------
@@ -65,11 +122,14 @@ namespace PanPlugin
             _btnImportBupan.Click += (s, e) => ImportBupan();
             _btnImportRefund = new Button { Text = "导入退款名单…", Width = 120 };
             _btnImportRefund.Click += (s, e) => ImportRefund();
+            _btnBackup = new Button { Text = "立即备份…", Width = 100 };
+            _btnBackup.Click += (s, e) => BackupNow();
 
             top.Controls.Add(new Label { Text = "搜索客户：", AutoSize = true, Margin = new Padding(3, 8, 3, 3) });
             top.Controls.Add(_txtSearch);
             top.Controls.Add(_btnImportBupan);
             top.Controls.Add(_btnImportRefund);
+            top.Controls.Add(_btnBackup);
 
             var split = new SplitContainer
             {
