@@ -2,6 +2,7 @@
 
 - 日期：2026-11-04
 - 审查对象：`src/PanPlugin/` 全部 6 个窗体（`MainForm`、`AliasManagerForm`、`LinkCustomerForm`、`RestoreBackupForm`、`TransferForms` 2 个、`Period` 确认框、`MainForm` 内 2 个小对话框）+ 两张实测截图
+- 版本：**第 1–9 节**为空表状态首轮审查；**第 10 节**为 2026-11-04 23:22 真实数据截图（约 30 行客户）的第二轮复核，含 3 个代码级缺陷与路线修订；两轮的全部建议代码均通过本地 net48 等价编译验证
 - 方法：`ui-design-system` 技能的 **UI Audit & Optimization Protocol**（6 维度审查）
 - 交付性质：**审查报告 + 设计令牌 + 建议代码**，未修改任何 `.cs` 文件；建议代码已通过本地 net48 等价编译验证（验证用的临时文件已删除）
 - 隐私：本报告将推送公开仓库，文中客户名一律用「客户 A / 客户 B」等占位名，不出现真实昵称或医院名
@@ -433,3 +434,175 @@ _btnArchive = Theme.DangerButton("归档所选客户…", 120);
 - 不改任何业务逻辑、账本结构、`store.json` 格式；本报告只涉及表现层。
 - 不做深色模式：WinForms 原生控件无法系统性换肤，且内勤在明亮办公环境长期使用。
 - 不把本报告的令牌直接写进现有 `.cs`，避免"分析请求"变成"未经确认的代码改动"。
+
+---
+
+# 10. 第二轮复核：真实数据截图（2026-11-04 23:22）
+
+用户提供了一张**有真实数据**的截图（约 30 行客户、待补清单 4 条工单、历史账目 5 条记录），与第 1 节的空表状态差异很大。把截图局部放大 2 倍后，发现的问题从"审美"变成了**功能可达性**。本节是第 8 节路线的修订依据。
+
+## 10.1 截图实测数据
+
+| 区域 | 观察结果 |
+|---|---|
+| 客户列表 | 约 30 行；徽标起点随名字长度从 ≈70px 漂移到 ≈350px；长名称 + 双徽标顶到右边界；待补/抵扣同为黑色方括号，等权重 |
+| 待补清单 | `工单号` 显示 `2026-10\|20261020001`；`备注` 只显示 `状态:…`；表格右侧约 220px 完全空白 |
+| 历史账目 | `类型` = `补盘·…`、`内容` = `全能34…` / `术前14…`、`备注` = `[2026-…`；右侧约 290px 完全空白 |
+| 顶部 | 搜索框 + 5 个按钮几乎顶满 1000px 宽度，无收缩余量 |
+| 底部 | **只看到 7 个按钮**；代码里应有 8 个，「手工新增补盘…」不可见 |
+| 状态栏 | 仅「就绪」 |
+
+## 10.2 三个代码级缺陷（优先级高于任何美化）
+
+**① 工单号列混入账期（显示 bug）**
+
+`MainForm.cs:415` 仍是 ADR-0003 之前的写法：
+
+```csharp
+e.Ref != null && e.Ref.StartsWith("bupan|") ? e.Ref.Substring(6) : "(手工)"
+```
+
+但 `MainForm.cs:596` 与 `Store.cs:270` 都会调用 `Period.WithPeriod()`，指纹已是 `bupan|2026-10|工单号`。`Substring(6)` 剥掉的只有 `bupan|`，账期段留在了工单号里。修复：
+
+```csharp
+private static string OrderNoOf(LedgerEntry e)
+{
+    if (string.IsNullOrEmpty(e.Ref)) return "(手工)";
+    var parts = e.Ref.Split('|');
+    if (parts[0] == "bupan" && parts.Length >= 3) return parts[2];   // 新版含账期
+    if (parts[0] == "bupan" && parts.Length == 2) return parts[1];   // 旧账本兼容
+    return parts[parts.Length - 1];                                  // bupanrow|文件|行
+}
+```
+
+**② 备注列把两个字段硬拼成一个格子**
+
+`MainForm.cs:419` 是 `(e.Note ?? "") + "（" + (e.Source ?? "") + "）"`，`Parsers.cs:138` 又往 `Note` 塞了 `状态:xxx`。70px 列里两个字段都读不到。修复：拆列，不要拼字符串。
+
+| 表 | 建议列 | 权重 | 最小宽度 |
+|---|---|---|---|
+| 待补清单 | 工单号 / 盘型 / 张数 / 日期 / **状态** / **来源** | 30 / 16 / 8 / 12 / 12 / 22 | 150 / 80 / 48 / 72 / 72 / 120 |
+| 历史账目 | 时间 / 类型 / **内容** / **账期** / **来源** | 18 / 16 / 34 / 14 / 18 | 110 / 90 / 160 / 80 / 110 |
+
+> `CheckBoxes=true` 会在首列左侧占约 16px，首列最小宽度已考虑。
+
+列宽按可用宽度百分比计算，而不是按列名长度：
+
+```csharp
+/// <summary>按权重把列宽铺满 ListView 可用宽度；窗口 Resize 时重算。</summary>
+public static void LayoutColumns(ListView lv, int[] weights, int[] minWidths)
+{
+    int n = lv.Columns.Count;
+    if (n == 0 || weights.Length != n || minWidths.Length != n) return;
+    int avail = lv.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 2;
+    int minSum = 0, total = 0;
+    for (int i = 0; i < n; i++) { minSum += minWidths[i]; total += weights[i]; }
+    if (avail < minSum) avail = minSum;          // 过窄时交给水平滚动条，不再压扁文字
+    int used = 0;
+    for (int i = 0; i < n - 1; i++)
+    {
+        int w = Math.Max(minWidths[i], avail * weights[i] / total);
+        lv.Columns[i].Width = w;
+        used += w;
+    }
+    lv.Columns[n - 1].Width = Math.Max(minWidths[n - 1], avail - used);
+}
+
+// 建表后订阅，窗口尺寸变化自动重排
+_lvPending.Resize += (s, e) => Theme.LayoutColumns(
+    _lvPending, new[] { 30, 16, 8, 12, 12, 22 }, new[] { 150, 80, 48, 72, 72, 120 });
+_lvHistory.Resize += (s, e) => Theme.LayoutColumns(
+    _lvHistory, new[] { 18, 16, 34, 14, 18 }, new[] { 110, 90, 160, 80, 110 });
+```
+
+**③ 「手工新增补盘…」按钮不可见（功能不可达）**
+
+`MainForm.cs:229-232` 确实把它加进了 `pendingBtns`，但截图里该按钮没有出现。`pendingBtns`（`MainForm.cs:226`）与顶部工具栏同因：`FlowLayoutPanel` 默认 `WrapContents=true` + 固定 `Height=34`，列宽不够时第二个按钮换行后被裁掉。修复（同时给 `creditBtns`、`transferBtns`、`top` 加上）：
+
+```csharp
+WrapContents = false,
+AutoSize = true,                 // 让容器自己按需长高，别靠固定 Height 硬撑
+```
+
+并给 `MainForm` 设 `MinimumSize = new Size(960, 620)`（见第 5 节 `Theme.ApplyMain`）。**这一条应作为 P0 单独验证**：改完先确认 8 个底部按钮全部可见，再谈样式。
+
+## 10.3 客户列表组件规范（30 行密度专用）
+
+- 顶部加筛选条：`全部 30 / 待补 12 / 有余额 22` 三个胶囊 + 「待补优先」排序开关。30 行不做分组，扫读成本太高。
+- 行高 28–32px，名称左对齐、`EndEllipsis` 超长省略；**徽标固定右对齐**，不参与名称挤压。
+- 徽标语义色：`待补` = `DangerTint`/`Danger`（需要行动）、`抵扣` = `SuccessTint`/`Success`（钱）、`已归档` = 中性灰。选中行加 3px `Primary` 左条 + `PrimaryTint` 底。
+- `ListBox` 用 `DrawMode.OwnerDrawFixed` + `ItemHeight`，`ItemHolder<Customer>` 继续承载数据，只改绘制，不动账本。
+
+```csharp
+_lstCustomers.DrawMode = DrawMode.OwnerDrawFixed;
+_lstCustomers.ItemHeight = 28;
+_lstCustomers.DrawItem += (s, e) =>
+{
+    if (e.Index < 0) return;
+    var holder = _lstCustomers.Items[e.Index] as ItemHolder<Customer>;
+    if (holder == null) return;
+    var c = holder.Value;
+    bool sel = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
+    using (var bg = new SolidBrush(sel ? Theme.PrimaryTint : Theme.Surface))
+        e.Graphics.FillRectangle(bg, e.Bounds);
+    if (sel)
+        using (var accent = new SolidBrush(Theme.Primary))
+            e.Graphics.FillRectangle(accent, e.Bounds.Left, e.Bounds.Top, 3, e.Bounds.Height);
+
+    int right = e.Bounds.Right - Theme.S2;
+    if (c.Archived)
+        right = DrawBadge(e.Graphics, right, "已归档", Theme.HoverNeutral, Theme.TextSecond, e.Bounds);
+    int balance = _store.CreditBalance(c.Id);
+    if (balance != 0)
+        right = DrawBadge(e.Graphics, right, "抵扣 " + balance + " 元",
+                          Theme.SuccessTint, Theme.Success, e.Bounds);
+    int pending = PendingOf(c.Id).Sum(x => x.Qty);
+    if (pending > 0)
+        right = DrawBadge(e.Graphics, right, "待补 " + pending,
+                          Theme.DangerTint, Theme.Danger, e.Bounds);
+
+    var nameRect = new Rectangle(e.Bounds.Left + Theme.S2, e.Bounds.Top,
+                                 right - e.Bounds.Left - Theme.S3, e.Bounds.Height);
+    TextRenderer.DrawText(e.Graphics, c.Name, Theme.Body, nameRect,
+        sel ? Theme.PrimaryHover : Theme.TextPrimary,
+        TextFormatFlags.Left | TextFormatFlags.VerticalCenter |
+        TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
+};
+
+private static int DrawBadge(Graphics g, int right, string text,
+                             Color back, Color fore, Rectangle row)
+{
+    var sz = TextRenderer.MeasureText(g, text, Theme.Small,
+        new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPadding);
+    int w = sz.Width + Theme.S2 * 2, h = sz.Height + Theme.S1;
+    var r = new Rectangle(right - w, row.Top + (row.Height - h) / 2, w, h);
+    using (var b = new SolidBrush(back)) g.FillRectangle(b, r);
+    TextRenderer.DrawText(g, text, Theme.Small, r, fore,
+        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
+        TextFormatFlags.NoPadding);
+    return r.Left - Theme.S1;
+}
+```
+
+## 10.4 第 8 节路线修订
+
+| 优先级 | 修订后的顺序 | 说明 |
+|---|---|---|
+| **P0-a** | 修三个缺陷：`OrderNoOf`、`LayoutColumns` 拆列、`WrapContents=false` | **先让信息读得全、按钮点得到**，与样式无关，可独立提交 |
+| **P0-b** | `Theme.cs` 令牌 + 顶部 `MinimumSize` + 按钮分层 | 第 5 节方案 |
+| **P1** | 两张指标卡、分区标题/计数/空状态、操作按钮下沉到所属表格 | 右栏 `TableLayoutPanel` 行结构重排 |
+| **P1** | 客户列表筛选条 + owner-draw 右对齐徽标 | 10.3 节 |
+| **P2** | 对话框 `AutoScaleMode.Dpi` / 状态栏常驻统计 / 键盘可达性 | 不变 |
+
+## 10.5 改进对比（真实数据场景）
+
+| | Before | After |
+|---|---|---|
+| 工单号 | `2026-10\|20261020001` | `20261020001`，账期单独成列 |
+| 类型 / 内容 / 备注 | `补盘·…` / `全能34…` / `[2026-…` | `补盘·待发` / `全能34项 1 张` / `2026-10` + `10月补盘` |
+| 表格右侧 | 空 220–290px | 列宽铺满，零空白 |
+| 底部按钮 | 8 个中只有 7 个可见 | 8 个全部可达 |
+| 客户列表 | 徽标漂移、长名顶边、状态等权 | 右对齐语义徽标 + 筛选条 + 待补优先 |
+| 状态栏 | 「就绪」 | `账期 2026-10 · 30 位客户 · 12 家待补 · 最近备份 …` |
+
+> 本节代码同样为**建议稿**，未加入项目、未改任何 `.cs`。已把 `Theme.cs` + 本节的 `OrderNoOf` / `LayoutColumns` / `DrawBadge` 合并成临时文件走本地 net48 响应文件重放编译（exit 0，仅一条来自测试桩字段的 CS0649 警告），验证后删除临时文件。截图中的真实客户名在本节及配套图稿中一律用「示例市…」占位名替换，符合公开仓库要求。
