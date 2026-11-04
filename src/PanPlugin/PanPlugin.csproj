@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <LangVersion>7.3</LangVersion>
+    <AssemblyName>PanPlugin</AssemblyName>
+    <RootNamespace>PanPlugin</RootNamespace>
+    <Version>0.1.0</Version>
+    <Product>生化盘客户管理插件</Product>
+    <Description>读取每月补盘名单与退款名单，查询客户补盘/抵扣情况并本地记账</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 允许没有装 .NET Framework 4.8 目标包的机器（如 GitHub Actions）编译 net48 -->
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" />
+    <PackageReference Include="ClosedXML" Version="0.102.2" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+</Project>
