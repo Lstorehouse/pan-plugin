@@ -32,7 +32,7 @@ namespace PanPlugin
                 AutoSize = true,
                 MaximumSize = new Size(550, 0),
                 Location = new Point(14, 12),
-                ForeColor = Color.DimGray
+                ForeColor = Theme.TextSecond
             };
             _list.Location = new Point(14, 62);
             _list.Size = new Size(550, 210);
@@ -40,13 +40,14 @@ namespace PanPlugin
 
             _detail.Location = new Point(14, 284);
             _detail.Size = new Size(550, 54);
-            _detail.ForeColor = Color.DimGray;
+            _detail.ForeColor = Theme.TextSecond;
 
             var ok = new Button { Text = "恢复所选备份", Location = new Point(330, 366), Width = 130 };
             ok.Click += (s, e) => ConfirmRestore();
             var cancel = new Button { Text = "取消", DialogResult = DialogResult.Cancel, Location = new Point(470, 366), Width = 94 };
             Controls.AddRange(new Control[] { lbl, _list, _detail, ok, cancel });
             CancelButton = cancel;
+            Theme.FinishDialog(this);
 
             foreach (var p in backups) _paths.Add(p);
             foreach (var p in _paths)

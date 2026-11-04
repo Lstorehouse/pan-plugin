@@ -16,37 +16,84 @@ namespace PanPlugin
         private Button _btnImportRefund;
         private Button _btnBackup;
         private Button _btnRestore;
-        private Button _btnMerge;
-        private Button _btnArchive;
+        private Button _btnMore;
         private Button _btnAliases;
+        private Button _chipAll;
+        private Button _chipPending;
+        private Button _chipBalance;
         private CheckBox _chkShowArchived;
+        private CheckBox _chkPendingFirst;
+        private int _listFilter;              // 0 全部 / 1 待补 / 2 有余额
         private ListBox _lstCustomers;
         private Label _lblName;
-        private Label _lblPending;
-        private Label _lblBalance;
+        private Label _lblAliasHint;
+        private Label _lblPending;            // 指标卡数值
+        private Label _lblPendingCaption;
+        private Label _lblBalance;            // 指标卡数值
+        private Label _lblPendingCount;
+        private Label _lblHistoryCount;
         private ListView _lvPending;
         private ListView _lvHistory;
+        private Label _lblPendingEmpty;
+        private Label _lblHistoryEmpty;
         private Button _btnMarkDone;
         private Button _btnAddBupan;
         private Button _btnAddCredit;
         private Button _btnDeduct;
         private Button _btnUndo;
         private Button _btnMoveEntries;
-        private Button _btnTransferLog;
+        private ToolStripMenuItem _miArchive;
+        private ToolStripMenuItem _miMerge;
+        private ToolStripMenuItem _miTransferLog;
         private StatusStrip _status;
+        private ToolStripStatusLabel _statusInfo;
         private ToolStripStatusLabel _statusText;
+        private SplitContainer _split;
 
         private Customer _current;
 
         public MainForm()
         {
             Text = "生化盘客户管理插件";
+            Theme.ApplyMain(this);
             ClientSize = new Size(1000, 640);
             StartPosition = FormStartPosition.CenterScreen;
+            KeyPreview = true;
 
             BuildUi();
             RefreshList();
+            RefreshStatusSummary();
+            KeyDown += MainForm_KeyDown;
+            Shown += delegate
+            {
+                ApplyColumnWidths();
+                // 必须在布局完成后设：构造期 SplitContainer 宽度还是默认值，
+                // 设 Panel2MinSize 会触发 ApplyPanel2MinSize 反推 SplitterDistance 而抛异常。
+                if (_split != null)
+                {
+                    _split.Panel1MinSize = 240;
+                    _split.Panel2MinSize = 480;
+                }
+            };
             FormClosing += MainForm_FormClosing;
+        }
+
+        private void MainForm_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Control && e.KeyCode == Keys.F)
+            {
+                _txtSearch.Focus();
+                _txtSearch.SelectAll();
+                e.SuppressKeyPress = true;
+            }
+            else if (e.KeyCode == Keys.F5)
+            {
+                RefreshList();
+                RefreshDetail();
+                RefreshStatusSummary();
+                SetStatus("已刷新（F5）");
+                e.SuppressKeyPress = true;
+            }
         }
 
         // ---------- 备份 ----------
@@ -140,14 +187,20 @@ namespace PanPlugin
 
         private void BuildUi()
         {
+            // ---------- 顶部工具栏：1 个 Filled + 1 个 Outlined + 低频 Text + 更多菜单 ----------
             var top = new FlowLayoutPanel
             {
                 Dock = DockStyle.Top,
-                Height = 44,
-                Padding = new Padding(8, 8, 8, 0),
-                FlowDirection = FlowDirection.LeftToRight
+                Height = 48,
+                Padding = new Padding(Theme.S4, Theme.S2, Theme.S4, Theme.S2),
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,          // 固定高度下禁止换行，否则第二行按钮被裁掉
+                BackColor = Theme.Surface
             };
-            _txtSearch = new TextBox { Width = 280, Font = new Font(Font, FontStyle.Regular) };
+            _txtSearch = new TextBox
+            {
+                Width = 236, Font = Theme.Body, Margin = new Padding(0, 4, Theme.S2, 0)
+            };
             _txtSearch.TextChanged += (s, e) => RefreshList();
             _txtSearch.KeyDown += (s, e) =>
             {
@@ -157,126 +210,221 @@ namespace PanPlugin
                     e.SuppressKeyPress = true;
                 }
             };
-            _btnImportBupan = new Button { Text = "导入补盘名单…", Width = 120 };
-            _btnImportBupan.Click += (s, e) => ImportBupan();
-            _btnImportRefund = new Button { Text = "导入退款名单…", Width = 120 };
-            _btnImportRefund.Click += (s, e) => ImportRefund();
-            _btnBackup = new Button { Text = "立即备份…", Width = 100 };
-            _btnBackup.Click += (s, e) => BackupNow();
-            _btnRestore = new Button { Text = "恢复备份…", Width = 100 };
-            _btnRestore.Click += (s, e) => ShowRestoreBackup();
-            _btnArchive = new Button { Text = "归档所选客户…", Width = 120, Enabled = false };
-            _btnArchive.Click += (s, e) => ToggleArchive();
-            // 「显示已归档」放到左栏列表上方，避免顶部一排按钮挤不下
-            _chkShowArchived = new CheckBox
-            {
-                Text = "显示已归档", Dock = DockStyle.Fill, Margin = new Padding(8, 5, 0, 0)
-            };
-            _chkShowArchived.CheckedChanged += (s, e) => RefreshList();
 
-            top.Controls.Add(new Label { Text = "搜索客户：", AutoSize = true, Margin = new Padding(3, 8, 3, 3) });
+            _btnImportBupan = Theme.Filled("导入补盘名单…", 120);
+            _btnImportBupan.Click += (s, e) => ImportBupan();
+            _btnImportRefund = Theme.Outlined("导入退款名单…", 120);
+            _btnImportRefund.Click += (s, e) => ImportRefund();
+            _btnBackup = Theme.TextButton("立即备份…", 88);
+            _btnBackup.Click += (s, e) => BackupNow();
+            _btnRestore = Theme.TextButton("恢复备份…", 88);
+            _btnRestore.Click += (s, e) => ShowRestoreBackup();
+
+            var moreMenu = new ContextMenuStrip { Font = Theme.Body };
+            _miArchive = new ToolStripMenuItem("归档所选客户…");
+            _miArchive.Click += (s, e) => ToggleArchive();
+            _miMerge = new ToolStripMenuItem("合并到另一客户…");
+            _miMerge.Click += (s, e) => MergeCurrentCustomer();
+            _miTransferLog = new ToolStripMenuItem("转移记录…");
+            _miTransferLog.Click += (s, e) => ShowTransferLog();
+            moreMenu.Items.AddRange(new ToolStripItem[]
+            {
+                _miArchive, new ToolStripSeparator(), _miMerge, _miTransferLog
+            });
+            _btnMore = Theme.TextButton("更多 ▾", 76);
+            _btnMore.Click += (s, e) => moreMenu.Show(_btnMore, new Point(0, _btnMore.Height));
+
+            top.Controls.Add(new Label
+            {
+                Text = "搜索客户：", AutoSize = true, Font = Theme.Small,
+                ForeColor = Theme.TextSecond, Margin = new Padding(0, 10, Theme.S1, 0)
+            });
             top.Controls.Add(_txtSearch);
             top.Controls.Add(_btnImportBupan);
             top.Controls.Add(_btnImportRefund);
             top.Controls.Add(_btnBackup);
             top.Controls.Add(_btnRestore);
-            top.Controls.Add(_btnArchive);
+            top.Controls.Add(_btnMore);
 
             var split = new SplitContainer
             {
-                Dock = DockStyle.Fill
+                Dock = DockStyle.Fill,
+                BackColor = Theme.Border
             };
+            _split = split;
+            split.Panel1.BackColor = Theme.Surface;
+            split.Panel2.BackColor = Theme.Page;
 
-            _lstCustomers = new ListBox { Dock = DockStyle.Fill, Font = new Font("Microsoft YaHei UI", 9F) };
-            _lstCustomers.SelectedIndexChanged += (s, e) => RefreshDetail();
-            var left = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
-            left.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
-            left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            left.Controls.Add(_chkShowArchived, 0, 0);
-            left.Controls.Add(_lstCustomers, 0, 1);
-            split.Panel1.Controls.Add(left);
-
-            var right = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 6 };
-            right.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            right.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            right.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            right.RowStyles.Add(new RowStyle(SizeType.Percent, 55));
-            right.RowStyles.Add(new RowStyle(SizeType.Percent, 45));
-            right.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-
-            _lblName = new Label { Text = "（未选择客户）", AutoSize = true, Font = new Font("Microsoft YaHei UI", 12F, FontStyle.Bold), Padding = new Padding(8, 6, 3, 0) };
-            _btnAliases = new Button { Text = "管理别名…", Width = 100, Height = 24, Enabled = false, Margin = new Padding(6, 10, 0, 0) };
-            _btnAliases.Click += (s, e) => ManageAliases();
-            var namePanel = new FlowLayoutPanel
+            // ---------- 左栏：筛选胶囊 + 选项 + owner-draw 客户列表 ----------
+            _lstCustomers = new ListBox
             {
                 Dock = DockStyle.Fill,
-                AutoSize = true,
-                FlowDirection = FlowDirection.LeftToRight,
-                WrapContents = false
+                Font = Theme.Body,
+                BackColor = Theme.Surface,
+                BorderStyle = BorderStyle.None,
+                DrawMode = DrawMode.OwnerDrawFixed,
+                ItemHeight = Theme.RowHeight,
+                IntegralHeight = false
             };
-            namePanel.Controls.Add(_lblName);
-            namePanel.Controls.Add(_btnAliases);
-            _lblPending = new Label { Text = "", AutoSize = true, Padding = new Padding(10, 0, 3, 0), ForeColor = Color.Firebrick };
-            _lblBalance = new Label { Text = "", AutoSize = true, Padding = new Padding(10, 0, 3, 4), ForeColor = Color.SeaGreen };
+            _lstCustomers.SelectedIndexChanged += (s, e) => RefreshDetail();
+            _lstCustomers.DrawItem += LstCustomers_DrawItem;
 
-            // 两个列表都要能勾选：待补盘用于「标记已补发」，历史用于「转移到其他客户」
-            _lvPending = NewList(new[] { "工单号", "盘型", "张数", "日期", "备注" }, true);
-            _lvHistory = NewList(new[] { "时间", "类型", "内容", "备注" }, true);
+            _chipAll = Theme.Chip("全部", 76);
+            _chipPending = Theme.Chip("待补", 76);
+            _chipBalance = Theme.Chip("有余额", 88);
+            _chipAll.Click += delegate { _listFilter = 0; RefreshList(); };
+            _chipPending.Click += delegate { _listFilter = 1; RefreshList(); };
+            _chipBalance.Click += delegate { _listFilter = 2; RefreshList(); };
+            var chips = Theme.ToolStrip(24);
+            chips.Dock = DockStyle.Top;
+            chips.WrapContents = true;
+            chips.Padding = new Padding(Theme.S2, Theme.S1, 0, 0);
+            chips.Controls.Add(_chipAll);
+            chips.Controls.Add(_chipPending);
+            chips.Controls.Add(_chipBalance);
 
-            var pendingBtns = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, Height = 34, Padding = new Padding(8, 4, 0, 0) };
-            _btnMarkDone = new Button { Text = "勾选项标记已补发", Width = 140 };
+            _chkShowArchived = new CheckBox
+            {
+                Text = "显示已归档", AutoSize = true, Font = Theme.Small,
+                ForeColor = Theme.TextSecond, Margin = new Padding(0, 3, Theme.S3, 0)
+            };
+            _chkShowArchived.CheckedChanged += (s, e) => RefreshList();
+            _chkPendingFirst = new CheckBox
+            {
+                Text = "待补优先", AutoSize = true, Font = Theme.Small,
+                ForeColor = Theme.TextSecond, Margin = new Padding(0, 3, 0, 0)
+            };
+            _chkPendingFirst.CheckedChanged += (s, e) => RefreshList();
+            var options = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false, BackColor = Color.Transparent,
+                Padding = new Padding(Theme.S2, 0, 0, 0), Margin = new Padding(0)
+            };
+            options.Controls.Add(_chkShowArchived);
+            options.Controls.Add(_chkPendingFirst);
+
+            var left = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, BackColor = Theme.Surface
+            };
+            left.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            left.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
+            left.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            left.Controls.Add(chips, 0, 0);
+            left.Controls.Add(options, 0, 1);
+            left.Controls.Add(_lstCustomers, 0, 2);
+            split.Panel1.Controls.Add(left);
+
+            // ---------- 右栏：标题 / 指标卡 / 两个分区表 / 各自的操作条 ----------
+            var right = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 8,
+                BackColor = Theme.Page,
+                Padding = new Padding(Theme.S4, Theme.S2, Theme.S4, Theme.S2)
+            };
+            right.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+            right.RowStyles.Add(new RowStyle(SizeType.Absolute, 60));
+            right.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+            right.RowStyles.Add(new RowStyle(SizeType.Percent, 45));
+            right.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            right.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+            right.RowStyles.Add(new RowStyle(SizeType.Percent, 55));
+            right.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            _lblName = new Label
+            {
+                Text = "（未选择客户）", AutoSize = true, Font = Theme.Title,
+                ForeColor = Theme.TextPrimary, Margin = new Padding(0, 3, Theme.S3, 0)
+            };
+            _btnAliases = Theme.TextButton("管理别名…", 90);
+            _btnAliases.Enabled = false;
+            _btnAliases.Click += (s, e) => ManageAliases();
+            _lblAliasHint = Theme.HintLabel("");
+            _lblAliasHint.Margin = new Padding(0, 9, 0, 0);
+            var header = Theme.ToolStrip(34);
+            header.WrapContents = false;
+            header.Controls.Add(_lblName);
+            header.Controls.Add(_btnAliases);
+            header.Controls.Add(_lblAliasHint);
+            right.Controls.Add(header, 0, 0);
+
+            var kpi = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = new Padding(0)
+            };
+            kpi.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            kpi.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            Label pv, bv, pc, bc;
+            var card1 = Theme.MetricCard("待补盘", Theme.Danger, out pv, out pc);
+            var card2 = Theme.MetricCard("抵扣余额", Theme.Primary, out bv, out bc);
+            _lblPending = pv;
+            _lblBalance = bv;
+            _lblPendingCaption = pc;
+            kpi.Controls.Add(card1, 0, 0);
+            kpi.Controls.Add(card2, 1, 0);
+            right.Controls.Add(kpi, 0, 1);
+
+            var pendingHead = SectionHeader("待补清单", out _lblPendingCount);
+            right.Controls.Add(pendingHead, 0, 2);
+
+            _lvPending = NewList(new[] { "工单号", "盘型", "张数", "日期", "状态", "来源" }, true);
+            _lvHistory = NewList(new[] { "时间", "类型", "内容", "账期", "来源" }, true);
+            Label pe, he;
+            var pendingHost = Theme.GridHost(_lvPending, out pe, "暂无待补记录");
+            var historyHost = Theme.GridHost(_lvHistory, out he, "暂无历史账目");
+            _lblPendingEmpty = pe;
+            _lblHistoryEmpty = he;
+            _lvPending.Resize += (s, e) => ApplyColumnWidths();
+            _lvHistory.Resize += (s, e) => ApplyColumnWidths();
+            right.Controls.Add(pendingHost, 0, 3);
+
+            var pendingBtns = ActionStrip();
+            _btnMarkDone = Theme.Filled("勾选项标记已补发", 140);
             _btnMarkDone.Click += (s, e) => MarkDone();
-            _btnAddBupan = new Button { Text = "手工新增补盘…", Width = 120 };
+            _btnAddBupan = Theme.Outlined("手工新增补盘…", 120);
             _btnAddBupan.Click += (s, e) => AddManualBupan();
             pendingBtns.Controls.Add(_btnMarkDone);
             pendingBtns.Controls.Add(_btnAddBupan);
+            pendingBtns.Controls.Add(Theme.HintLabel("勾选 = 已实际补发给客户"));
+            right.Controls.Add(pendingBtns, 0, 4);
 
-            var creditBtns = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, Height = 34, Padding = new Padding(8, 4, 0, 0) };
-            _btnAddCredit = new Button { Text = "手工增加抵扣…", Width = 120 };
-            _btnAddCredit.Click += (s, e) => AddCredit();
-            _btnDeduct = new Button { Text = "进货抵扣（扣减）…", Width = 140 };
-            _btnDeduct.Click += (s, e) => DeductCredit();
-            _btnUndo = new Button { Text = "撤销历史中所选记录", Width = 160 };
-            _btnUndo.Click += (s, e) => UndoSelected();
-            creditBtns.Controls.Add(_btnAddCredit);
-            creditBtns.Controls.Add(_btnDeduct);
-            creditBtns.Controls.Add(_btnUndo);
+            var historyHead = SectionHeader("历史账目", out _lblHistoryCount);
+            right.Controls.Add(historyHead, 0, 5);
+            right.Controls.Add(historyHost, 0, 6);
 
-            right.Controls.Add(namePanel, 0, 0);
-            right.Controls.Add(_lblPending, 0, 1);
-            right.Controls.Add(_lblBalance, 0, 2);
-            right.Controls.Add(_lvPending, 0, 3);
-            right.Controls.Add(_lvHistory, 0, 4);
-            var transferBtns = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                FlowDirection = FlowDirection.LeftToRight,
-                AutoSize = true,
-                Padding = new Padding(8, 0, 0, 0)
-            };
-            _btnMoveEntries = new Button { Text = "所选记录转移到…", Width = 150, Enabled = false };
+            var historyBtns = ActionStrip();
+            _btnMoveEntries = Theme.TextButton("所选记录转移到…", 132);
             _btnMoveEntries.Click += (s, e) => MoveSelectedEntries();
-            _btnTransferLog = new Button { Text = "转移记录…", Width = 100 };
-            _btnTransferLog.Click += (s, e) => ShowTransferLog();
-            _btnMerge = new Button { Text = "合并到另一客户…", Width = 140, Enabled = false };
-            _btnMerge.Click += (s, e) => MergeCurrentCustomer();
-            transferBtns.Controls.Add(_btnMoveEntries);
-            transferBtns.Controls.Add(_btnTransferLog);
-            transferBtns.Controls.Add(_btnMerge);
-
-            var btnPanel = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2 };
-            btnPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            btnPanel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            btnPanel.Controls.Add(pendingBtns, 0, 0);
-            btnPanel.Controls.Add(creditBtns, 1, 0);
-            btnPanel.Controls.Add(transferBtns, 0, 1);
-            btnPanel.SetColumnSpan(transferBtns, 2);
-            right.Controls.Add(btnPanel, 0, 5);
+            _btnUndo = Theme.TextButton("撤销历史中所选记录", 140);
+            _btnUndo.Click += (s, e) => UndoSelected();
+            _btnAddCredit = Theme.TextButton("手工增加抵扣…", 116);
+            _btnAddCredit.Click += (s, e) => AddCredit();
+            _btnDeduct = Theme.TextButton("进货抵扣（扣减）…", 132);
+            _btnDeduct.Click += (s, e) => DeductCredit();
+            historyBtns.Controls.Add(_btnMoveEntries);
+            historyBtns.Controls.Add(_btnUndo);
+            historyBtns.Controls.Add(_btnAddCredit);
+            historyBtns.Controls.Add(_btnDeduct);
+            right.Controls.Add(historyBtns, 0, 7);
 
             split.Panel2.Controls.Add(right);
 
-            _status = new StatusStrip();
-            _statusText = new ToolStripStatusLabel { Text = "就绪" };
+            _status = new StatusStrip
+            {
+                BackColor = Theme.Page, Font = Theme.Small, SizingGrip = false
+            };
+            _statusInfo = new ToolStripStatusLabel
+            {
+                Text = "", ForeColor = Theme.TextSecond, Spring = true,
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+            _statusText = new ToolStripStatusLabel
+            {
+                Text = "就绪", ForeColor = Theme.TextSecond,
+                Alignment = ToolStripItemAlignment.Right
+            };
+            _status.Items.Add(_statusInfo);
             _status.Items.Add(_statusText);
 
             Controls.Add(split);
@@ -285,21 +433,115 @@ namespace PanPlugin
             split.SplitterDistance = 320;
         }
 
+        private static FlowLayoutPanel SectionHeader(string title, out Label count)
+        {
+            var p = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false, BackColor = Color.Transparent,
+                AutoSize = true, Margin = new Padding(0), Padding = new Padding(0)
+            };
+            p.Controls.Add(new Label
+            {
+                Text = title, Font = Theme.Section, ForeColor = Theme.TextPrimary,
+                AutoSize = true, Margin = new Padding(0, 4, Theme.S2, 0)
+            });
+            count = new Label
+            {
+                Text = "0", Font = Theme.Small, ForeColor = Theme.PrimaryHover,
+                BackColor = Theme.PrimaryTint, AutoSize = true,
+                Margin = new Padding(0, 5, 0, 0),
+                Padding = new Padding(Theme.S1, 0, Theme.S1, 0)
+            };
+            p.Controls.Add(count);
+            return p;
+        }
+
+        private static FlowLayoutPanel ActionStrip()
+        {
+            return new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = true,           // 窄窗口自动换行，AutoSize 让行高跟着长
+                BackColor = Color.Transparent,
+                Padding = new Padding(0, Theme.S1, 0, Theme.S1),
+                Margin = new Padding(0)
+            };
+        }
+
         private static ListView NewList(string[] cols, bool checkBoxes = false)
         {
             var lv = new ListView
             {
                 Dock = DockStyle.Fill,
                 View = View.Details,
-                FullRowSelect = true,
-                GridLines = true,
-                HideSelection = false,
                 CheckBoxes = checkBoxes
             };
-            foreach (var c in cols)
-                lv.Columns.Add(c, c.Length > 2 ? 110 : 70);
-            lv.Columns[0].Width = 160;
+            foreach (var c in cols) lv.Columns.Add(c, 100);
+            Theme.StyleGrid(lv);
             return lv;
+        }
+
+        /// <summary>按权重把两张表的列宽铺满可用宽度；Resize / Shown 时调用。</summary>
+        private void ApplyColumnWidths()
+        {
+            if (_lvPending == null || _lvHistory == null) return;
+            Theme.LayoutColumns(_lvPending,
+                new[] { 30, 16, 8, 12, 14, 20 }, new[] { 150, 80, 48, 72, 80, 100 });
+            Theme.LayoutColumns(_lvHistory,
+                new[] { 18, 16, 34, 14, 18 }, new[] { 110, 90, 160, 80, 110 });
+        }
+
+        /// <summary>
+        /// 指纹兼容新旧两种格式：旧 bupan|工单号、新 bupan|账期|工单号，
+        /// 以及无工单号时的 bupanrow|文件|行。账期单独成列，不再混进工单号。
+        /// </summary>
+        private static string OrderNoOf(LedgerEntry e)
+        {
+            if (string.IsNullOrEmpty(e.Ref)) return "(手工)";
+            var parts = e.Ref.Split('|');
+            if (parts[0] == "bupan" && parts.Length >= 3) return parts[2];
+            if (parts[0] == "bupan" && parts.Length == 2) return parts[1];
+            return parts[parts.Length - 1];
+        }
+
+        /// <summary>客户行自绘：名称左对齐超长省略，徽标统一右对齐，不参与挤压。</summary>
+        private void LstCustomers_DrawItem(object sender, DrawItemEventArgs e)
+        {
+            if (e.Index < 0) return;
+            var holder = _lstCustomers.Items[e.Index] as ItemHolder<Customer>;
+            if (holder == null) return;
+            var c = holder.Value;
+            bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
+
+            using (var bg = new SolidBrush(selected ? Theme.PrimaryTint : Theme.Surface))
+                e.Graphics.FillRectangle(bg, e.Bounds);
+            if (selected)
+                using (var accent = new SolidBrush(Theme.Primary))
+                    e.Graphics.FillRectangle(accent, e.Bounds.Left, e.Bounds.Top, 3, e.Bounds.Height);
+
+            int right = e.Bounds.Right - Theme.S2;
+            if (c.Archived)
+                right = Theme.DrawBadge(e.Graphics, right, "已归档",
+                    Theme.HoverNeutral, Theme.TextSecond, e.Bounds);
+            int balance = _store.CreditBalance(c.Id);
+            if (balance != 0)
+                right = Theme.DrawBadge(e.Graphics, right, "抵扣 " + balance + " 元",
+                    Theme.SuccessTint, Theme.Success, e.Bounds);
+            int pending = PendingOf(c.Id).Sum(x => x.Qty);
+            if (pending > 0)
+                right = Theme.DrawBadge(e.Graphics, right, "待补 " + pending,
+                    Theme.DangerTint, Theme.Danger, e.Bounds);
+
+            var nameRect = new Rectangle(e.Bounds.Left + Theme.S3, e.Bounds.Top,
+                Math.Max(0, right - e.Bounds.Left - Theme.S3 - Theme.S1), e.Bounds.Height);
+            TextRenderer.DrawText(e.Graphics, c.Name, Theme.Body, nameRect,
+                selected ? Theme.PrimaryHover : Theme.TextPrimary,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter |
+                TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding);
         }
 
         // ---------- 数据刷新 ----------
@@ -324,7 +566,7 @@ namespace PanPlugin
 
         private void RefreshList()
         {
-            var query = (_txtSearch.Text ?? "").Trim();
+            var query = (_txtSearch != null ? _txtSearch.Text : "").Trim();
             // 归档客户默认从列表和搜索里隐藏；勾上「显示已归档」才可见（用于恢复/核对）。
             IEnumerable<Customer> q = (_chkShowArchived != null && _chkShowArchived.Checked)
                 ? _store.Customers
@@ -337,19 +579,35 @@ namespace PanPlugin
                 // 模糊排序：开头命中优先
                 q = q.OrderByDescending(c => c.Name.StartsWith(query, StringComparison.OrdinalIgnoreCase) ? 1 : 0);
             }
-            var ordered = q.OrderBy(c => c.Name, StringComparer.CurrentCulture).ToList();
+
+            var all = q.ToList();
+            int total = all.Count;
+            int pendingCount = all.Count(c => PendingOf(c.Id).Sum(e => e.Qty) > 0);
+            int balanceCount = all.Count(c => _store.CreditBalance(c.Id) != 0);
+
+            if (_chipAll != null)
+            {
+                _chipAll.Text = "全部 " + total;
+                _chipPending.Text = "待补 " + pendingCount;
+                _chipBalance.Text = "有余额 " + balanceCount;
+                Theme.StyleChip(_chipAll, _listFilter == 0, Theme.Primary, Color.White);
+                Theme.StyleChip(_chipPending, _listFilter == 1, Theme.DangerTint, Theme.Danger);
+                Theme.StyleChip(_chipBalance, _listFilter == 2, Theme.SuccessTint, Theme.Success);
+            }
+
+            if (_listFilter == 1) q = all.Where(c => PendingOf(c.Id).Sum(e => e.Qty) > 0);
+            else if (_listFilter == 2) q = all.Where(c => _store.CreditBalance(c.Id) != 0);
+            else q = all;
+
+            var ordered = (_chkPendingFirst != null && _chkPendingFirst.Checked)
+                ? q.OrderByDescending(c => PendingOf(c.Id).Sum(e => e.Qty))
+                     .ThenBy(c => c.Name, StringComparer.CurrentCulture).ToList()
+                : q.OrderBy(c => c.Name, StringComparer.CurrentCulture).ToList();
 
             _lstCustomers.BeginUpdate();
             _lstCustomers.Items.Clear();
             foreach (var c in ordered)
-            {
-                var pending = PendingOf(c.Id).Sum(e => e.Qty);
-                var balance = _store.CreditBalance(c.Id);
-                _lstCustomers.Items.Add(new ItemHolder<Customer>(c,
-                    c.Name + (c.Archived ? "　（已归档）" : "")
-                           + (pending > 0 ? "　[待补 " + pending + "]" : "")
-                           + (balance != 0 ? "　[抵扣 " + balance + "元]" : "")));
-            }
+                _lstCustomers.Items.Add(new ItemHolder<Customer>(c, c.Name));
             _lstCustomers.EndUpdate();
             if (_current != null)
             {
@@ -357,6 +615,7 @@ namespace PanPlugin
                 if (idx >= 0) _lstCustomers.SelectedIndex = idx;
             }
             if (_lstCustomers.SelectedIndex < 0) RefreshDetail();
+            RefreshStatusSummary();
         }
 
         private class ItemHolder<T>
@@ -381,45 +640,63 @@ namespace PanPlugin
             var holder = _lstCustomers.SelectedItem as ItemHolder<Customer>;
             _current = holder != null ? holder.Value : null;
 
-            if (_btnArchive != null)
+            if (_miArchive != null)
             {
-                _btnArchive.Enabled = _current != null;
-                _btnArchive.Text = (_current != null && _current.Archived) ? "恢复该客户" : "归档所选客户…";
+                _miArchive.Enabled = _current != null;
+                _miArchive.Text = (_current != null && _current.Archived) ? "恢复该客户" : "归档所选客户…";
             }
             if (_btnAliases != null) _btnAliases.Enabled = _current != null;
             if (_btnMoveEntries != null) _btnMoveEntries.Enabled = _current != null;
-            if (_btnMerge != null) _btnMerge.Enabled = _current != null;
+            if (_miMerge != null) _miMerge.Enabled = _current != null;
+            if (_btnMarkDone != null) _btnMarkDone.Enabled = _current != null;
+            if (_btnAddBupan != null) _btnAddBupan.Enabled = _current != null;
+            if (_btnAddCredit != null) _btnAddCredit.Enabled = _current != null;
+            if (_btnDeduct != null) _btnDeduct.Enabled = _current != null;
+            if (_btnUndo != null) _btnUndo.Enabled = _current != null;
 
             if (_current == null)
             {
                 _lblName.Text = "（未选择客户）";
-                _lblPending.Text = "";
-                _lblBalance.Text = "";
+                _lblAliasHint.Text = "从左侧选择客户，或用顶部搜索框查找";
+                _lblPending.Text = "—";
+                _lblBalance.Text = "—";
+                _lblPendingCaption.Text = "待补盘";
+                _lblPendingCount.Text = "0";
+                _lblHistoryCount.Text = "0";
+                ShowEmptyStates();
                 return;
             }
 
-            _lblName.Text = _current.Name + (_current.Archived ? "　（已归档）" : "");
+            _lblName.Text = _current.Name;
+            var aliasPart = _current.Aliases.Count > 0
+                ? "别名 " + string.Join("、", _current.Aliases.Take(2))
+                : "无别名";
+            _lblAliasHint.Text = (_current.Archived ? "已归档 · " : "") + aliasPart;
 
             var byType = PendingByType(_current.Id);
-            _lblPending.Text = "待补盘：" + (byType.Count == 0
-                ? "无 ✓"
-                : string.Join("；", byType.Select(kv => DiscTypes.DisplayName(kv.Key) + " " + kv.Value + " 张")));
-
-            var balance = _store.CreditBalance(_current.Id);
-            _lblBalance.Text = "抵扣余额：" + balance + " 元";
+            int pendingTotal = byType.Sum(kv => kv.Value);
+            _lblPending.Text = pendingTotal + " 张";
+            _lblPending.ForeColor = pendingTotal > 0 ? Theme.Danger : Theme.Success;
+            _lblPendingCaption.Text = byType.Count == 0
+                ? "待补盘"
+                : "待补盘 · " + byType.Count + " 种盘型";
+            _lblBalance.Text = "¥" + _store.CreditBalance(_current.Id);
 
             foreach (var e in PendingOf(_current.Id).OrderBy(e => e.CreatedAt))
             {
                 var it = new ListViewItem(new[]
                 {
-                    e.Ref != null && e.Ref.StartsWith("bupan|") ? e.Ref.Substring(6) : "(手工)",
+                    OrderNoOf(e),
                     DiscTypes.DisplayName(e.DiscType),
-                    e.Qty + "",
+                    e.Qty.ToString(),
                     e.CreatedAt.ToString("MM-dd"),
-                    (e.Note ?? "") + "（" + (e.Source ?? "") + "）"
+                    e.Processed ? "已补发" : "待发",
+                    e.Source ?? ""
                 });
                 it.Tag = e;
                 it.Checked = e.Processed;
+                it.UseItemStyleForSubItems = false;
+                it.SubItems[4].ForeColor = e.Processed ? Theme.Success : Theme.Danger;
                 _lvPending.Items.Add(it);
             }
 
@@ -451,13 +728,31 @@ namespace PanPlugin
                         type = "其他"; content = "";
                         break;
                 }
-                var src = string.IsNullOrEmpty(e.Period)
-                    ? (e.Source ?? "")
-                    : "[" + e.Period + "] " + (e.Source ?? "");
-                var it = new ListViewItem(new[] { e.CreatedAt.ToString("MM-dd HH:mm"), type, content, src });
+                var it = new ListViewItem(new[]
+                {
+                    e.CreatedAt.ToString("MM-dd HH:mm"),
+                    type,
+                    content,
+                    string.IsNullOrEmpty(e.Period) ? "—" : e.Period,
+                    e.Source ?? ""
+                });
                 it.Tag = e;
                 _lvHistory.Items.Add(it);
             }
+
+            _lblPendingCount.Text = _lvPending.Items.Count.ToString();
+            _lblHistoryCount.Text = _lvHistory.Items.Count.ToString();
+            ShowEmptyStates();
+        }
+
+        private void ShowEmptyStates()
+        {
+            bool p = _lvPending.Items.Count == 0;
+            bool h = _lvHistory.Items.Count == 0;
+            _lvPending.Visible = !p;
+            _lblPendingEmpty.Visible = p;
+            _lvHistory.Visible = !h;
+            _lblHistoryEmpty.Visible = h;
         }
 
         /// <summary>历史「内容」列：业务描述（如 4张68元档）在外，金额放括号内；无描述时只显示金额。</summary>
@@ -469,6 +764,29 @@ namespace PanPlugin
         private void SetStatus(string text)
         {
             _statusText.Text = text;
+        }
+
+        /// <summary>状态栏常驻全局上下文；账期、客户数、待补家数、最近备份时间。</summary>
+        private void RefreshStatusSummary()
+        {
+            if (_statusInfo == null) return;
+            var active = _store.Customers.Where(c => !c.Archived).ToList();
+            int pendingCustomers = active.Count(c => PendingOf(c.Id).Sum(e => e.Qty) > 0);
+            string period = _store.Entries
+                .Where(e => !string.IsNullOrEmpty(e.Period))
+                .Select(e => e.Period)
+                .OrderByDescending(p => p, StringComparer.Ordinal)
+                .FirstOrDefault() ?? "—";
+            string backup = "无";
+            try
+            {
+                var files = Store.ListBackups();
+                if (files.Count > 0) backup = File.GetLastWriteTime(files[0]).ToString("MM-dd HH:mm");
+            }
+            catch { /* 备份目录不可读时不影响主界面 */ }
+            _statusInfo.Text = "账期 " + period + " · " + active.Count + " 位客户 · "
+                + pendingCustomers + " 家待补 · 最近备份 " + backup
+                + " · Ctrl+F 搜索 / F5 刷新";
         }
 
         // ---------- 导入 ----------
@@ -966,6 +1284,7 @@ namespace PanPlugin
                 var cancel = new Button { Text = "取消", DialogResult = DialogResult.Cancel, Location = new Point(215, 125), Width = 75 };
                 f.Controls.AddRange(new Control[] { lblT, cmb, lblQ, num, lblN, txt, ok, cancel });
                 f.AcceptButton = ok; f.CancelButton = cancel;
+                Theme.FinishDialog(f);
 
                 if (f.ShowDialog(this) != DialogResult.OK) return false;
                 type = cmb.SelectedIndex == 1 ? DiscType.ShuQian : cmb.SelectedIndex == 2 ? DiscType.YiChong : DiscType.QuanNeng;
@@ -995,6 +1314,7 @@ namespace PanPlugin
                 var cancel = new Button { Text = "取消", DialogResult = DialogResult.Cancel, Location = new Point(215, 95), Width = 75 };
                 f.Controls.AddRange(new Control[] { lblA, num, lblN, txt, ok, cancel });
                 f.AcceptButton = ok; f.CancelButton = cancel;
+                Theme.FinishDialog(f);
 
                 if (f.ShowDialog(this) != DialogResult.OK) return false;
                 amount = (int)num.Value;

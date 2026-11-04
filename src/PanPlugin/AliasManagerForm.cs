@@ -90,7 +90,7 @@ namespace PanPlugin
                 AutoSize = true,
                 MaximumSize = new Size(508, 0),
                 Location = new Point(14, 332),
-                ForeColor = Color.DimGray
+                ForeColor = Theme.TextSecond
             };
 
             var ok = new Button { Text = "确定", DialogResult = DialogResult.OK, Location = new Point(332, 408), Width = 92 };
@@ -101,6 +101,7 @@ namespace PanPlugin
                                              hint, ok, cancel });
             AcceptButton = ok;
             CancelButton = cancel;
+            Theme.FinishDialog(this);
 
             FormClosing += (s, e) =>
             {

@@ -63,6 +63,7 @@ namespace PanPlugin
             Controls.AddRange(new Control[] { lbl, _rbLink, _list, _rbNew, lblNew, _txtNewName, ok, cancel });
             AcceptButton = ok;
             CancelButton = cancel;
+            Theme.FinishDialog(this);
 
             if (candidates.Count == 0)
             {

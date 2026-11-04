@@ -135,7 +135,7 @@ namespace PanPlugin
                 Text = "文件名未写月份时按数据日期／今天推断，请核对后再导入。",
                 AutoSize = true,
                 Location = new Point(16, 122),
-                ForeColor = Color.Gray
+                ForeColor = Theme.TextSecond
             };
             var ok = new Button
             {
@@ -151,6 +151,7 @@ namespace PanPlugin
             Controls.AddRange(new Control[] { lbl1, lbl2, lbl3, _txt, lblHint, ok, cancel });
             AcceptButton = ok;
             CancelButton = cancel;
+            Theme.FinishDialog(this);
 
             FormClosing += (s, e) =>
             {

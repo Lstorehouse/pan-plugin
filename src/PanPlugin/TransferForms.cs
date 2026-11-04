@@ -45,6 +45,7 @@ namespace PanPlugin
             Controls.AddRange(new Control[] { lbl, _txt, _list, ok, cancel });
             AcceptButton = ok;
             CancelButton = cancel;
+            Theme.FinishDialog(this);
 
             FormClosing += (s, e) =>
             {
@@ -103,7 +104,7 @@ namespace PanPlugin
                 AutoSize = true,
                 MaximumSize = new Size(550, 0),
                 Location = new Point(14, 12),
-                ForeColor = Color.DimGray
+                ForeColor = Theme.TextSecond
             };
             _list.Location = new Point(14, 62);
             _list.Size = new Size(550, 270);
@@ -114,6 +115,7 @@ namespace PanPlugin
             Controls.AddRange(new Control[] { lbl, _list, btnUndo, btnClose });
             AcceptButton = btnClose;
             CancelButton = btnClose;
+            Theme.FinishDialog(this);
 
             Reload();
         }
