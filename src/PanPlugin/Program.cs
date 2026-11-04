@@ -1,5 +1,5 @@
 using System;
-using System.WindowsForms;
+using System.Windows.Forms;
 
 namespace PanPlugin
 {

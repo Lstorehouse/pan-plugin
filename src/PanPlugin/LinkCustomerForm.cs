@@ -1,6 +1,6 @@
 using System;
 using System.Drawing;
-using System.WindowsForms;
+using System.Windows.Forms;
 
 namespace PanPlugin
 {

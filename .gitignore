@@ -3,3 +3,6 @@ obj/
 .vs/
 *.user
 materials/
+bindiag/
+build-binlog.zip
+logs_*/
