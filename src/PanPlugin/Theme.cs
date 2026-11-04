@@ -120,19 +120,50 @@ namespace PanPlugin
         }
 
         // ---------- 按钮 ----------
-        private static Button Base(string text, int width)
+        /// <summary>
+        /// 按钮内 GDI 文字预留：TextRenderer 的字形外延、Flat 按钮内部边距与少量余量。
+        /// 旧实现只有左右各 12px 内边距，中文长文案被裁成「导入补盘名」这类半截文字。
+        /// </summary>
+        private const int TextGutter = 24;
+
+        /// <summary>客户行徽标的固定槽宽（逻辑像素）。</summary>
+        public const int BadgeSlot = 92;
+
+        /// <summary>
+        /// 用 96 DPI 的内存 DC 量文字，得到「逻辑像素」宽度。
+        /// 不能用屏幕 DC：声明 DPI 感知后在 200% 下会量出 2 倍宽，
+        /// 而 AutoScaleMode.Dpi 又会整体放大一次，按钮会过宽挤出工具条。
+        /// </summary>
+        private static int MeasureLogicalText(string text, Font font)
+        {
+            using (var bmp = new Bitmap(1, 1))
+            using (var g = Graphics.FromImage(bmp))
+            {
+                return TextRenderer.MeasureText(g, text, font,
+                    new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPadding).Width;
+            }
+        }
+
+        /// <summary>按文字实测宽度定宽；传入值退化为「最小宽度」而非固定宽度。</summary>
+        public static int ButtonWidthFor(string text, int minWidth)
+        {
+            return Math.Max(minWidth,
+                MeasureLogicalText(text, Body) + S2 * 2 + TextGutter);
+        }
+
+        private static Button Base(string text, int minWidth)
         {
             return new Button
             {
                 Text = text,
-                Width = width,
+                Width = ButtonWidthFor(text, minWidth),
                 Height = ButtonHeight,
                 Font = Body,
                 FlatStyle = FlatStyle.Flat,
                 UseVisualStyleBackColor = false,
                 Cursor = Cursors.Hand,
                 Margin = new Padding(0, 0, S2, 0),
-                Padding = new Padding(S3, 0, S3, 0)
+                Padding = new Padding(S2, 0, S2, 0)
             };
         }
 
@@ -169,14 +200,19 @@ namespace PanPlugin
             return b;
         }
 
-        public static Button TextButton(string text, int width = 88)
+        /// <summary>
+        /// 文本按钮。emphasize=true 用主色链接样式：底部操作条原先全用灰蓝色 TextSecond，
+        /// 在 200% 位图缩放下看起来像「禁用」，实际可点。
+        /// </summary>
+        public static Button TextButton(string text, int width = 88, bool emphasize = false)
         {
             var b = Base(text, width);
+            var fg = emphasize ? PrimaryHover : TextSecond;
             b.BackColor = Color.Transparent;
-            b.ForeColor = TextSecond;
+            b.ForeColor = fg;
             b.FlatAppearance.BorderSize = 0;
             b.FlatAppearance.MouseOverBackColor = HoverNeutral;
-            TrackEnabled(b, Color.Transparent, TextSecond);
+            TrackEnabled(b, Color.Transparent, fg);
             return b;
         }
 
@@ -253,9 +289,14 @@ namespace PanPlugin
             {
                 Dock = DockStyle.Fill,
                 Height = 56,
-                BackColor = Page,
+                BackColor = Surface,
                 Padding = new Padding(S3, S1, S3, S1),
                 Margin = new Padding(0, 0, S2, 0)
+            };
+            p.Paint += delegate(object s, PaintEventArgs e)
+            {
+                ControlPaint.DrawBorder(e.Graphics, p.ClientRectangle,
+                    Border, ButtonBorderStyle.Solid);
             };
             value = new Label
             {
@@ -339,6 +380,21 @@ namespace PanPlugin
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
                 TextFormatFlags.NoPadding);
             return r.Left - S1;
+        }
+
+        /// <summary>在固定宽度槽位里右对齐画徽标，保证同行两个徽标的位置稳定不跳动。</summary>
+        public static void DrawBadgeSlot(Graphics g, int slotRight, int slotWidth,
+                                        string text, Color back, Color fore, Rectangle row)
+        {
+            var sz = TextRenderer.MeasureText(g, text, Small,
+                new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPadding);
+            int w = Math.Min(slotWidth, sz.Width + S2 * 2);
+            int h = sz.Height + S1;
+            var r = new Rectangle(slotRight - w, row.Top + (row.Height - h) / 2, w, h);
+            using (var b = new SolidBrush(back)) g.FillRectangle(b, r);
+            TextRenderer.DrawText(g, text, Small, r, fore,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding);
         }
     }
 }

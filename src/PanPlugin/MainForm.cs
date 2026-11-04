@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace PanPlugin
@@ -47,8 +48,17 @@ namespace PanPlugin
         private ToolStripMenuItem _miTransferLog;
         private StatusStrip _status;
         private ToolStripStatusLabel _statusInfo;
+        private ToolStripStatusLabel _statusHint;
         private ToolStripStatusLabel _statusText;
         private SplitContainer _split;
+        private TableLayoutPanel _rightGrid;
+        private ToolTip _tip;
+        private int _densityState = -1;
+
+        // net48 的 TextBox 没有 PlaceholderText；EM_SETCUEBANNER 从 XP/2003 起可用，Win7 支持。
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, string lParam);
+        private const int EM_SETCUEBANNER = 0x1501;
 
         private Customer _current;
 
@@ -74,6 +84,9 @@ namespace PanPlugin
                     _split.Panel1MinSize = 240;
                     _split.Panel2MinSize = 480;
                 }
+                if (_txtSearch != null && _txtSearch.IsHandleCreated)
+                    SendMessage(_txtSearch.Handle, EM_SETCUEBANNER,
+                        (IntPtr)1, "输入客户名或别名…");
             };
             FormClosing += MainForm_FormClosing;
         }
@@ -211,14 +224,20 @@ namespace PanPlugin
                 }
             };
 
+            _tip = new ToolTip { AutoPopDelay = 6000, InitialDelay = 500, ReshowDelay = 200 };
+
             _btnImportBupan = Theme.Filled("导入补盘名单…", 120);
             _btnImportBupan.Click += (s, e) => ImportBupan();
+            _tip.SetToolTip(_btnImportBupan, "导入每月补盘名单（.xlsx），导入前会确认账期");
             _btnImportRefund = Theme.Outlined("导入退款名单…", 120);
             _btnImportRefund.Click += (s, e) => ImportRefund();
+            _tip.SetToolTip(_btnImportRefund, "导入每月退款名单（.txt），按账期去重");
             _btnBackup = Theme.TextButton("立即备份…", 88);
             _btnBackup.Click += (s, e) => BackupNow();
+            _tip.SetToolTip(_btnBackup, "立即备份当前账本，最多保留 3 份");
             _btnRestore = Theme.TextButton("恢复备份…", 88);
             _btnRestore.Click += (s, e) => ShowRestoreBackup();
+            _tip.SetToolTip(_btnRestore, "从备份恢复账本，恢复前会先保存当前账本快照");
 
             var moreMenu = new ContextMenuStrip { Font = Theme.Body };
             _miArchive = new ToolStripMenuItem("归档所选客户…");
@@ -231,8 +250,10 @@ namespace PanPlugin
             {
                 _miArchive, new ToolStripSeparator(), _miMerge, _miTransferLog
             });
-            _btnMore = Theme.TextButton("更多 ▾", 76);
+            // 不用 ▾：Microsoft YaHei UI 缺字形时会被裁掉，看起来像没有下拉菜单。
+            _btnMore = Theme.TextButton("更多…", 76);
             _btnMore.Click += (s, e) => moreMenu.Show(_btnMore, new Point(0, _btnMore.Height));
+            _tip.SetToolTip(_btnMore, "归档/恢复客户、合并到另一客户、转移记录");
 
             top.Controls.Add(new Label
             {
@@ -323,6 +344,7 @@ namespace PanPlugin
                 BackColor = Theme.Page,
                 Padding = new Padding(Theme.S4, Theme.S2, Theme.S4, Theme.S2)
             };
+            _rightGrid = right;   // ShowEmptyStates 会按内容动态调整两张表的高度占比
             right.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
             right.RowStyles.Add(new RowStyle(SizeType.Absolute, 60));
             right.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
@@ -337,9 +359,10 @@ namespace PanPlugin
                 Text = "（未选择客户）", AutoSize = true, Font = Theme.Title,
                 ForeColor = Theme.TextPrimary, Margin = new Padding(0, 3, Theme.S3, 0)
             };
-            _btnAliases = Theme.TextButton("管理别名…", 90);
+            _btnAliases = Theme.TextButton("管理别名…", 90, true);
             _btnAliases.Enabled = false;
             _btnAliases.Click += (s, e) => ManageAliases();
+            _tip.SetToolTip(_btnAliases, "改名/删除/新增别名，或把别名转移给其他客户");
             _lblAliasHint = Theme.HintLabel("");
             _lblAliasHint.Margin = new Padding(0, 9, 0, 0);
             var header = Theme.ToolStrip(34);
@@ -382,8 +405,10 @@ namespace PanPlugin
             var pendingBtns = ActionStrip();
             _btnMarkDone = Theme.Filled("勾选项标记已补发", 140);
             _btnMarkDone.Click += (s, e) => MarkDone();
+            _tip.SetToolTip(_btnMarkDone, "把勾选项标记为已实际补发给客户");
             _btnAddBupan = Theme.Outlined("手工新增补盘…", 120);
             _btnAddBupan.Click += (s, e) => AddManualBupan();
+            _tip.SetToolTip(_btnAddBupan, "补录一张源文件中没有的补盘工单");
             pendingBtns.Controls.Add(_btnMarkDone);
             pendingBtns.Controls.Add(_btnAddBupan);
             pendingBtns.Controls.Add(Theme.HintLabel("勾选 = 已实际补发给客户"));
@@ -394,14 +419,20 @@ namespace PanPlugin
             right.Controls.Add(historyHost, 0, 6);
 
             var historyBtns = ActionStrip();
-            _btnMoveEntries = Theme.TextButton("所选记录转移到…", 132);
+            // 四个操作原先全是灰蓝无边框 Text 按钮，看起来像禁用。
+            // 主操作升为 Outlined，其余用主色链接样式，层级与可点击性都更明确。
+            _btnMoveEntries = Theme.Outlined("所选记录转移到…", 132);
             _btnMoveEntries.Click += (s, e) => MoveSelectedEntries();
-            _btnUndo = Theme.TextButton("撤销历史中所选记录", 140);
+            _tip.SetToolTip(_btnMoveEntries, "把勾选的历史账目逐条转移到其他客户，可整批撤销");
+            _btnUndo = Theme.Outlined("撤销历史中所选记录", 140);
             _btnUndo.Click += (s, e) => UndoSelected();
-            _btnAddCredit = Theme.TextButton("手工增加抵扣…", 116);
+            _tip.SetToolTip(_btnUndo, "撤销勾选的账目（含转移批次）");
+            _btnAddCredit = Theme.TextButton("手工增加抵扣…", 116, true);
             _btnAddCredit.Click += (s, e) => AddCredit();
-            _btnDeduct = Theme.TextButton("进货抵扣（扣减）…", 132);
+            _tip.SetToolTip(_btnAddCredit, "手工登记一笔抵扣余额入账");
+            _btnDeduct = Theme.TextButton("进货抵扣（扣减）…", 132, true);
             _btnDeduct.Click += (s, e) => DeductCredit();
+            _tip.SetToolTip(_btnDeduct, "进货时用抵扣余额扣减，记录留痕");
             historyBtns.Controls.Add(_btnMoveEntries);
             historyBtns.Controls.Add(_btnUndo);
             historyBtns.Controls.Add(_btnAddCredit);
@@ -414,10 +445,18 @@ namespace PanPlugin
             {
                 BackColor = Theme.Page, Font = Theme.Small, SizingGrip = false
             };
+            // 长文本挤在 Spring 标签里会把首字裁掉（实测「账期」变成「长期」）。
+            // 拆成短摘要 + 独立的快捷键提示，并给摘要留左内边距。
             _statusInfo = new ToolStripStatusLabel
             {
                 Text = "", ForeColor = Theme.TextSecond, Spring = true,
-                TextAlign = ContentAlignment.MiddleLeft
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(Theme.S2, 0, 0, 0)
+            };
+            _statusHint = new ToolStripStatusLabel
+            {
+                Text = "Ctrl+F 搜索 · F5 刷新", ForeColor = Theme.TextHint,
+                Alignment = ToolStripItemAlignment.Right
             };
             _statusText = new ToolStripStatusLabel
             {
@@ -425,6 +464,7 @@ namespace PanPlugin
                 Alignment = ToolStripItemAlignment.Right
             };
             _status.Items.Add(_statusInfo);
+            _status.Items.Add(_statusHint);
             _status.Items.Add(_statusText);
 
             Controls.Add(split);
@@ -478,7 +518,8 @@ namespace PanPlugin
             {
                 Dock = DockStyle.Fill,
                 View = View.Details,
-                CheckBoxes = checkBoxes
+                CheckBoxes = checkBoxes,
+                ShowItemToolTips = true   // 来源列被省略号截断时可读到完整内容
             };
             foreach (var c in cols) lv.Columns.Add(c, 100);
             Theme.StyleGrid(lv);
@@ -524,20 +565,24 @@ namespace PanPlugin
                     e.Graphics.FillRectangle(accent, e.Bounds.Left, e.Bounds.Top, 3, e.Bounds.Height);
 
             int right = e.Bounds.Right - Theme.S2;
-            if (c.Archived)
-                right = Theme.DrawBadge(e.Graphics, right, "已归档",
-                    Theme.HoverNeutral, Theme.TextSecond, e.Bounds);
+            int slot = Theme.BadgeSlot;
+            int gap = Theme.S1;
+            int nameRight = right - slot * 2 - gap;   // 固定两个徽标槽位，名称截断位置不再跳动
             int balance = _store.CreditBalance(c.Id);
-            if (balance != 0)
-                right = Theme.DrawBadge(e.Graphics, right, "抵扣 " + balance + " 元",
-                    Theme.SuccessTint, Theme.Success, e.Bounds);
             int pending = PendingOf(c.Id).Sum(x => x.Qty);
+
+            if (c.Archived)
+                nameRight = Theme.DrawBadge(e.Graphics, nameRight, "已归档",
+                    Theme.HoverNeutral, Theme.TextSecond, e.Bounds);
+            if (balance != 0)
+                Theme.DrawBadgeSlot(e.Graphics, right, slot, "抵扣 " + balance + " 元",
+                    Theme.SuccessTint, Theme.Success, e.Bounds);
             if (pending > 0)
-                right = Theme.DrawBadge(e.Graphics, right, "待补 " + pending,
+                Theme.DrawBadgeSlot(e.Graphics, right - slot - gap, slot, "待补 " + pending,
                     Theme.DangerTint, Theme.Danger, e.Bounds);
 
             var nameRect = new Rectangle(e.Bounds.Left + Theme.S3, e.Bounds.Top,
-                Math.Max(0, right - e.Bounds.Left - Theme.S3 - Theme.S1), e.Bounds.Height);
+                Math.Max(0, nameRight - e.Bounds.Left - Theme.S3 - Theme.S1), e.Bounds.Height);
             TextRenderer.DrawText(e.Graphics, c.Name, Theme.Body, nameRect,
                 selected ? Theme.PrimaryHover : Theme.TextPrimary,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter |
@@ -695,6 +740,9 @@ namespace PanPlugin
                 });
                 it.Tag = e;
                 it.Checked = e.Processed;
+                it.ToolTipText = "工单 " + OrderNoOf(e) + " · "
+                    + DiscTypes.DisplayName(e.DiscType) + " " + e.Qty + " 张 · 来源 "
+                    + (string.IsNullOrEmpty(e.Source) ? "手工" : e.Source);
                 it.UseItemStyleForSubItems = false;
                 it.SubItems[4].ForeColor = e.Processed ? Theme.Success : Theme.Danger;
                 _lvPending.Items.Add(it);
@@ -737,6 +785,9 @@ namespace PanPlugin
                     e.Source ?? ""
                 });
                 it.Tag = e;
+                it.ToolTipText = type + " · " + content + " · 账期 "
+                    + (string.IsNullOrEmpty(e.Period) ? "—" : e.Period)
+                    + " · 来源 " + (string.IsNullOrEmpty(e.Source) ? "手工" : e.Source);
                 _lvHistory.Items.Add(it);
             }
 
@@ -753,6 +804,16 @@ namespace PanPlugin
             _lblPendingEmpty.Visible = p;
             _lvHistory.Visible = !h;
             _lblHistoryEmpty.Visible = h;
+
+            // 待补清单为空时把它的 45% 高度收掉，把空间让给历史账目，减少大片留白。
+            int state = (p ? 1 : 0) | (h ? 2 : 0);
+            if (_rightGrid != null && state != _densityState)
+            {
+                float pendingPct = p ? (h ? 35f : 22f) : (h ? 70f : 45f);
+                _rightGrid.RowStyles[3] = new RowStyle(SizeType.Percent, pendingPct);
+                _rightGrid.RowStyles[6] = new RowStyle(SizeType.Percent, 100f - pendingPct);
+                _densityState = state;
+            }
         }
 
         /// <summary>历史「内容」列：业务描述（如 4张68元档）在外，金额放括号内；无描述时只显示金额。</summary>
@@ -785,8 +846,7 @@ namespace PanPlugin
             }
             catch { /* 备份目录不可读时不影响主界面 */ }
             _statusInfo.Text = "账期 " + period + " · " + active.Count + " 位客户 · "
-                + pendingCustomers + " 家待补 · 最近备份 " + backup
-                + " · Ctrl+F 搜索 / F5 刷新";
+                + pendingCustomers + " 家待补 · 最近备份 " + backup;
         }
 
         // ---------- 导入 ----------
