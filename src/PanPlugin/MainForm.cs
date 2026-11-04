@@ -275,15 +275,15 @@ namespace PanPlugin
                         break;
                     case EntryKind.RefundCredit:
                         type = "退款入账";
-                        content = "+" + e.Amount + " 元（" + e.Note + "）";
+                        content = MoneyText(e.Note, "+" + e.Amount + " 元");
                         break;
                     case EntryKind.ManualCredit:
                         type = "手工入账";
-                        content = "+" + e.Amount + " 元";
+                        content = MoneyText(e.Note, "+" + e.Amount + " 元");
                         break;
                     case EntryKind.Deduct:
                         type = "进货抵扣";
-                        content = e.Amount + " 元";
+                        content = MoneyText(e.Note, e.Amount + " 元");
                         break;
                     default:
                         type = "其他"; content = "";
@@ -293,6 +293,12 @@ namespace PanPlugin
                 it.Tag = e;
                 _lvHistory.Items.Add(it);
             }
+        }
+
+        /// <summary>历史「内容」列：业务描述（如 4张68元档）在外，金额放括号内；无描述时只显示金额。</summary>
+        private static string MoneyText(string note, string money)
+        {
+            return string.IsNullOrWhiteSpace(note) ? money : note.Trim() + "（" + money + "）";
         }
 
         private void SetStatus(string text)
