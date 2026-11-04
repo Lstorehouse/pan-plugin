@@ -91,6 +91,10 @@ namespace PanPlugin
         public string Name { get; set; }
         public List<string> Aliases { get; set; } = new List<string>();
         public string HospitalCode { get; set; }
+        /// <summary>归档/隐藏：默认列表与搜索不再显示，但档案、别名、账目全部保留。</summary>
+        public bool Archived { get; set; }
+        /// <summary>归档时间；未归档或已恢复时为 null。</summary>
+        public DateTime? ArchivedAt { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.Now;
 
         public bool Matches(string text)

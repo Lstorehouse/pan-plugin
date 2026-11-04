@@ -15,6 +15,8 @@ namespace PanPlugin
         private Button _btnImportBupan;
         private Button _btnImportRefund;
         private Button _btnBackup;
+        private Button _btnArchive;
+        private CheckBox _chkShowArchived;
         private ListBox _lstCustomers;
         private Label _lblName;
         private Label _lblPending;
@@ -124,12 +126,18 @@ namespace PanPlugin
             _btnImportRefund.Click += (s, e) => ImportRefund();
             _btnBackup = new Button { Text = "立即备份…", Width = 100 };
             _btnBackup.Click += (s, e) => BackupNow();
+            _btnArchive = new Button { Text = "归档所选客户…", Width = 120, Enabled = false };
+            _btnArchive.Click += (s, e) => ToggleArchive();
+            _chkShowArchived = new CheckBox { Text = "显示已归档", AutoSize = true, Margin = new Padding(8, 10, 3, 3) };
+            _chkShowArchived.CheckedChanged += (s, e) => RefreshList();
 
             top.Controls.Add(new Label { Text = "搜索客户：", AutoSize = true, Margin = new Padding(3, 8, 3, 3) });
             top.Controls.Add(_txtSearch);
             top.Controls.Add(_btnImportBupan);
             top.Controls.Add(_btnImportRefund);
             top.Controls.Add(_btnBackup);
+            top.Controls.Add(_btnArchive);
+            top.Controls.Add(_chkShowArchived);
 
             var split = new SplitContainer
             {
@@ -237,7 +245,10 @@ namespace PanPlugin
         private void RefreshList()
         {
             var query = (_txtSearch.Text ?? "").Trim();
-            IEnumerable<Customer> q = _store.Customers;
+            // 归档客户默认从列表和搜索里隐藏；勾上「显示已归档」才可见（用于恢复/核对）。
+            IEnumerable<Customer> q = (_chkShowArchived != null && _chkShowArchived.Checked)
+                ? _store.Customers
+                : _store.Customers.Where(c => !c.Archived);
             if (query.Length > 0)
             {
                 q = q.Where(c =>
@@ -255,7 +266,9 @@ namespace PanPlugin
                 var pending = PendingOf(c.Id).Sum(e => e.Qty);
                 var balance = _store.CreditBalance(c.Id);
                 _lstCustomers.Items.Add(new ItemHolder<Customer>(c,
-                    c.Name + (pending > 0 ? "　[待补 " + pending + "]" : "") + (balance != 0 ? "　[抵扣 " + balance + "元]" : "")));
+                    c.Name + (c.Archived ? "　（已归档）" : "")
+                           + (pending > 0 ? "　[待补 " + pending + "]" : "")
+                           + (balance != 0 ? "　[抵扣 " + balance + "元]" : "")));
             }
             _lstCustomers.EndUpdate();
             if (_current != null)
@@ -288,6 +301,12 @@ namespace PanPlugin
             var holder = _lstCustomers.SelectedItem as ItemHolder<Customer>;
             _current = holder != null ? holder.Value : null;
 
+            if (_btnArchive != null)
+            {
+                _btnArchive.Enabled = _current != null;
+                _btnArchive.Text = (_current != null && _current.Archived) ? "恢复该客户" : "归档所选客户…";
+            }
+
             if (_current == null)
             {
                 _lblName.Text = "（未选择客户）";
@@ -296,7 +315,7 @@ namespace PanPlugin
                 return;
             }
 
-            _lblName.Text = _current.Name;
+            _lblName.Text = _current.Name + (_current.Archived ? "　（已归档）" : "");
 
             var byType = PendingByType(_current.Id);
             _lblPending.Text = "待补盘：" + (byType.Count == 0
@@ -452,7 +471,7 @@ namespace PanPlugin
         /// <summary>导入核心：确认账期 → 客户归属（自动/关联/新建）→ 跨月去重 → 入账。</summary>
         private void CommitImport(ImportResult parsed, string sourceLabel, string period)
         {
-            int linked = 0, created = 0, added = 0, skipped = 0;
+            int linked = 0, created = 0, added = 0, skipped = 0, revived = 0;
 
             foreach (var g in parsed.Groups)
             {
@@ -485,6 +504,7 @@ namespace PanPlugin
 
                 target.AddAlias(g.RawName);
 
+                bool revivedThisGroup = false;
                 foreach (var e in g.Entries)
                 {
                     e.CustomerId = target.Id;
@@ -494,6 +514,14 @@ namespace PanPlugin
                     if (e.Ref != null) _store.ImportedRefs.Add(e.Ref);
                     _store.Entries.Add(e);
                     added++;
+                    // 归档客户下月又有补盘 → 自动重新出现（只有真正入账才算，重复导入不算）
+                    if (!revivedThisGroup && target.Archived &&
+                        (e.Kind == EntryKind.BupanOrder || e.Kind == EntryKind.ManualBupan))
+                    {
+                        ReviveIfArchived(target);
+                        revivedThisGroup = true;
+                        revived++;
+                    }
                 }
             }
 
@@ -503,6 +531,7 @@ namespace PanPlugin
 
             var msg = sourceLabel + "（账期 " + Period.Display(period) + "）：入账 " + added + " 条，自动/关联归属 " + linked + " 组，新建客户 " + created + " 个，跳过 " + skipped + " 条";
             if (parsed.SkippedVs2 > 0) msg += "（含 VS2 综合盘 " + parsed.SkippedVs2 + " 条）";
+            if (revived > 0) msg += "；↻ " + revived + " 个归档客户因新补盘已自动恢复显示";
             if (parsed.UnparsedLines.Count > 0)
                 msg += "；⚠ " + parsed.UnparsedLines.Count + " 行无法解析：" + string.Join(" / ", parsed.UnparsedLines.Take(3));
             SetStatus(msg);
@@ -511,6 +540,57 @@ namespace PanPlugin
         }
 
         // ---------- 操作 ----------
+
+        /// <summary>
+        /// 归档/恢复。归档只加标记，档案、别名、账目全部保留；
+        /// 下月导入该客户的补盘时会自动解除归档（见 CommitImport）。
+        /// </summary>
+        private void ToggleArchive()
+        {
+            if (_current == null)
+            {
+                MessageBox.Show(this, "请先在左侧列表选中一个客户。", "生化盘插件");
+                return;
+            }
+
+            var name = _current.Name;
+            bool archiving = !_current.Archived;
+            if (archiving)
+            {
+                int pending = PendingOf(_current.Id).Sum(e => e.Qty);
+                int balance = _store.CreditBalance(_current.Id);
+                var warn = "";
+                if (pending > 0) warn += "还有 " + pending + " 张待补盘；";
+                if (balance != 0) warn += "抵扣余额还有 " + balance + " 元；";
+                var text = "确定归档客户「" + name + "」吗？\n\n"
+                    + (warn.Length > 0 ? "⚠ " + warn + "\n\n" : "")
+                    + "归档后默认不再显示、也不参与搜索，但历史数据完整保留；\n"
+                    + "下月导入该客户的补盘时会自动重新出现。";
+                if (MessageBox.Show(this, text, "生化盘插件",
+                        MessageBoxButtons.YesNo, MessageBoxIcon.Question,
+                        MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
+                _current.Archived = true;
+                _current.ArchivedAt = DateTime.Now;
+            }
+            else
+            {
+                _current.Archived = false;
+                _current.ArchivedAt = null;
+            }
+
+            _store.Save();
+            RefreshList();      // 归档后该客户会离开默认列表，_current 可能变 null
+            RefreshDetail();
+            SetStatus(archiving ? "已归档：" + name : "已恢复显示：" + name);
+        }
+
+        /// <summary>归档客户出现新的补盘条目时自动恢复显示。</summary>
+        private static void ReviveIfArchived(Customer c)
+        {
+            if (c == null || !c.Archived) return;
+            c.Archived = false;
+            c.ArchivedAt = null;
+        }
 
         private void MarkDone()
         {
@@ -552,6 +632,7 @@ namespace PanPlugin
                 Source = "手工",
                 Ref = null
             });
+            ReviveIfArchived(_current);   // 归档客户手工新增补盘也会重新出现
             _store.Save();
             RefreshList();
             RefreshDetail();

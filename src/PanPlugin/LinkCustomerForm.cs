@@ -42,7 +42,9 @@ namespace PanPlugin
             _list.Location = new Point(30, 65);
             _list.Size = new Size(410, 170);
             foreach (var c in candidates)
-                _list.Items.Add(c.Name + (c.Aliases.Count > 0 ? "　（别名：" + string.Join("、", c.Aliases) + "）" : ""));
+                _list.Items.Add(c.Name
+                    + (c.Archived ? "　（已归档，选中后会自动恢复显示）" : "")
+                    + (c.Aliases.Count > 0 ? "　（别名：" + string.Join("、", c.Aliases) + "）" : ""));
             if (_list.Items.Count > 0) _list.SelectedIndex = 0;
 
             _rbNew.Text = "新建客户";
