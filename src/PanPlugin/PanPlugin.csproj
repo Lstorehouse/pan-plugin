@@ -13,6 +13,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- net48 不是 Windows 特定 TFM，UseWindowsForms 不生效，需显式引用 WinForms 程序集 -->
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- 允许没有装 .NET Framework 4.8 目标包的机器（如 GitHub Actions）编译 net48 -->
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="All" />
     <PackageReference Include="ClosedXML" Version="0.102.2" />
