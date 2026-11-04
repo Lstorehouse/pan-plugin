@@ -71,6 +71,8 @@ namespace PanPlugin
             KeyPreview = true;
 
             BuildUi();
+            // 必须在所有子控件建完后开启：AutoScaleMode.Dpi 会遍历并等比放大已有控件。
+            Theme.EnableDpiScaling(this);
             RefreshList();
             RefreshStatusSummary();
             KeyDown += MainForm_KeyDown;
@@ -81,8 +83,10 @@ namespace PanPlugin
                 // 设 Panel2MinSize 会触发 ApplyPanel2MinSize 反推 SplitterDistance 而抛异常。
                 if (_split != null)
                 {
-                    _split.Panel1MinSize = 240;
-                    _split.Panel2MinSize = 480;
+                    _split.Panel1MinSize = Theme.Scale(240);
+                    _split.Panel2MinSize = Theme.Scale(480);
+                    // 布局完成后统一写绝对值，避免构造期设置与 AutoScale 结果不一致。
+                    _split.SplitterDistance = Theme.Scale(320);
                 }
                 if (_txtSearch != null && _txtSearch.IsHandleCreated)
                     SendMessage(_txtSearch.Handle, EM_SETCUEBANNER,
@@ -284,7 +288,8 @@ namespace PanPlugin
                 BackColor = Theme.Surface,
                 BorderStyle = BorderStyle.None,
                 DrawMode = DrawMode.OwnerDrawFixed,
-                ItemHeight = Theme.RowHeight,
+                // ItemHeight 是 ListBox 的自绘属性，不随 AutoScale 缩放，必须手动换算。
+                ItemHeight = Theme.Scale(Theme.RowHeight),
                 IntegralHeight = false
             };
             _lstCustomers.SelectedIndexChanged += (s, e) => RefreshDetail();
@@ -451,7 +456,8 @@ namespace PanPlugin
             {
                 Text = "", ForeColor = Theme.TextSecond, Spring = true,
                 TextAlign = ContentAlignment.MiddleLeft,
-                Padding = new Padding(Theme.S2, 0, 0, 0)
+                // ToolStripItem.Padding 不随 AutoScale 缩放，需自己换算。
+                Padding = new Padding(Theme.Scale(Theme.S2), 0, 0, 0)
             };
             _statusHint = new ToolStripStatusLabel
             {
@@ -530,10 +536,13 @@ namespace PanPlugin
         private void ApplyColumnWidths()
         {
             if (_lvPending == null || _lvHistory == null) return;
+            // minWidths 是逻辑像素；高 DPI 下字体变大，最小列宽要同步放大才不会被挤断。
             Theme.LayoutColumns(_lvPending,
-                new[] { 30, 16, 8, 12, 14, 20 }, new[] { 150, 80, 48, 72, 80, 100 });
+                new[] { 30, 16, 8, 12, 14, 20 },
+                Theme.Scale(new[] { 150, 80, 48, 72, 80, 100 }));
             Theme.LayoutColumns(_lvHistory,
-                new[] { 18, 16, 34, 14, 18 }, new[] { 110, 90, 160, 80, 110 });
+                new[] { 18, 16, 34, 14, 18 },
+                Theme.Scale(new[] { 110, 90, 160, 80, 110 }));
         }
 
         /// <summary>
@@ -562,11 +571,13 @@ namespace PanPlugin
                 e.Graphics.FillRectangle(bg, e.Bounds);
             if (selected)
                 using (var accent = new SolidBrush(Theme.Primary))
-                    e.Graphics.FillRectangle(accent, e.Bounds.Left, e.Bounds.Top, 3, e.Bounds.Height);
+                    e.Graphics.FillRectangle(accent, e.Bounds.Left, e.Bounds.Top,
+                        Theme.Scale(3), e.Bounds.Height);
 
-            int right = e.Bounds.Right - Theme.S2;
-            int slot = Theme.BadgeSlot;
-            int gap = Theme.S1;
+            // owner-draw 里的像素不经过 AutoScale，逐一换算成设备像素。
+            int right = e.Bounds.Right - Theme.Scale(Theme.S2);
+            int slot = Theme.Scale(Theme.BadgeSlot);
+            int gap = Theme.Scale(Theme.S1);
             int nameRight = right - slot * 2 - gap;   // 固定两个徽标槽位，名称截断位置不再跳动
             int balance = _store.CreditBalance(c.Id);
             int pending = PendingOf(c.Id).Sum(x => x.Qty);
@@ -581,8 +592,9 @@ namespace PanPlugin
                 Theme.DrawBadgeSlot(e.Graphics, right - slot - gap, slot, "待补 " + pending,
                     Theme.DangerTint, Theme.Danger, e.Bounds);
 
-            var nameRect = new Rectangle(e.Bounds.Left + Theme.S3, e.Bounds.Top,
-                Math.Max(0, nameRight - e.Bounds.Left - Theme.S3 - Theme.S1), e.Bounds.Height);
+            int inset = Theme.Scale(Theme.S3);
+            var nameRect = new Rectangle(e.Bounds.Left + inset, e.Bounds.Top,
+                Math.Max(0, nameRight - e.Bounds.Left - inset - gap), e.Bounds.Height);
             TextRenderer.DrawText(e.Graphics, c.Name, Theme.Body, nameRect,
                 selected ? Theme.PrimaryHover : Theme.TextPrimary,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter |

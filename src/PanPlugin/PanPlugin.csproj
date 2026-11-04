@@ -7,6 +7,7 @@
     <AssemblyName>PanPlugin</AssemblyName>
     <RootNamespace>PanPlugin</RootNamespace>
     <Version>0.1.0</Version>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
     <Product>生化盘客户管理插件</Product>
     <Description>读取每月补盘名单与退款名单，查询客户补盘/抵扣情况并本地记账</Description>
   </PropertyGroup>

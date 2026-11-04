@@ -50,11 +50,54 @@ namespace PanPlugin
         public const int S1 = 4, S2 = 8, S3 = 12, S4 = 16, S6 = 24, S8 = 32;
         public const int RowHeight = 28, ButtonHeight = 30;
 
-        // ---------- 窗体 ----------
+        // ---------- DPI ----------
+        private static int _dpi;
+
         /// <summary>
-        /// 主窗体基础样式。刻意不设 AutoScaleMode.Dpi：实测截图是 200% 缩放下
-        /// Windows 对整个应用做位图缩放，强行声明 DPI 感知反而会二次缩放导致错位。
+        /// 进程实际看到的 DPI。声明 DPI 感知后 200% 缩放下为 192；
+        /// 未声明时 Windows 位图虚拟化会让它返回 96，此时 Scale() 退化为恒等。
         /// </summary>
+        public static int DeviceDpi
+        {
+            get
+            {
+                if (_dpi <= 0)
+                {
+                    try
+                    {
+                        using (var g = Graphics.FromHwnd(IntPtr.Zero))
+                            _dpi = (int)Math.Round(g.DpiY);
+                    }
+                    catch { _dpi = 96; }
+                }
+                return _dpi;
+            }
+        }
+
+        public static float ScaleFactor { get { return DeviceDpi / 96f; } }
+
+        /// <summary>把逻辑像素换算成设备像素，用于 AutoScale 管不到的自绘数值。</summary>
+        public static int Scale(int px) { return (int)Math.Round(px * ScaleFactor); }
+
+        public static int[] Scale(int[] values)
+        {
+            var result = new int[values.Length];
+            for (int i = 0; i < values.Length; i++) result[i] = Scale(values[i]);
+            return result;
+        }
+
+        /// <summary>
+        /// 与 app.manifest 的 DPI 感知配套：字体按点数在真实 DPI 下自动变大，
+        /// 控件几何必须按同一倍数放大，否则按钮会装不下文字、布局会错位。
+        /// 基准固定 96 DPI，避免设计时/运行时 DPI 不一致造成的二次缩放。
+        /// </summary>
+        public static void EnableDpiScaling(Form f)
+        {
+            f.AutoScaleDimensions = new SizeF(96F, 96F);
+            f.AutoScaleMode = AutoScaleMode.Dpi;
+        }
+
+        // ---------- 窗体 ----------
         public static void ApplyMain(Form f)
         {
             f.Font = Body;
@@ -75,6 +118,9 @@ namespace PanPlugin
             f.MinimizeBox = false;
             f.ShowIcon = false;
             // 不设 Padding：现有对话框用绝对 Location 布局，改内边距会挪动控件。
+            // AutoScaleMode.Dpi 会把绝对 Location / ClientSize 一起等比放大，
+            // 所以对话框在 200% 下仍然保持原有相对位置，只是文字变清晰。
+            EnableDpiScaling(f);
         }
 
         /// <summary>
@@ -130,17 +176,19 @@ namespace PanPlugin
         public const int BadgeSlot = 92;
 
         /// <summary>
-        /// 用 96 DPI 的内存 DC 量文字，得到「逻辑像素」宽度。
-        /// 不能用屏幕 DC：声明 DPI 感知后在 200% 下会量出 2 倍宽，
-        /// 而 AutoScaleMode.Dpi 又会整体放大一次，按钮会过宽挤出工具条。
+        /// 量出「逻辑像素」宽度。TextRenderer 按进程 DPI 把 9pt 字体换算成设备像素
+        /// （200% 下结果是 96 DPI 的 2 倍），这里除回 ScaleFactor；
+        /// 之后 AutoScaleMode.Dpi 会再整体放大一次，两者刚好抵消。
+        /// 若不做这一步，按钮会宽出约 3.3 倍，顶部最后一个按钮被挤出窗口。
         /// </summary>
         private static int MeasureLogicalText(string text, Font font)
         {
             using (var bmp = new Bitmap(1, 1))
             using (var g = Graphics.FromImage(bmp))
             {
-                return TextRenderer.MeasureText(g, text, font,
+                int measured = TextRenderer.MeasureText(g, text, font,
                     new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPadding).Width;
+                return (int)Math.Ceiling(measured / ScaleFactor);
             }
         }
 
@@ -373,13 +421,13 @@ namespace PanPlugin
         {
             var sz = TextRenderer.MeasureText(g, text, Small,
                 new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPadding);
-            int w = sz.Width + S2 * 2, h = sz.Height + S1;
+            int w = sz.Width + Scale(S2) * 2, h = sz.Height + Scale(S1);
             var r = new Rectangle(right - w, row.Top + (row.Height - h) / 2, w, h);
             using (var b = new SolidBrush(back)) g.FillRectangle(b, r);
             TextRenderer.DrawText(g, text, Small, r, fore,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
                 TextFormatFlags.NoPadding);
-            return r.Left - S1;
+            return r.Left - Scale(S1);
         }
 
         /// <summary>在固定宽度槽位里右对齐画徽标，保证同行两个徽标的位置稳定不跳动。</summary>
@@ -388,8 +436,8 @@ namespace PanPlugin
         {
             var sz = TextRenderer.MeasureText(g, text, Small,
                 new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPadding);
-            int w = Math.Min(slotWidth, sz.Width + S2 * 2);
-            int h = sz.Height + S1;
+            int w = Math.Min(slotWidth, sz.Width + Scale(S2) * 2);
+            int h = sz.Height + Scale(S1);
             var r = new Rectangle(slotRight - w, row.Top + (row.Height - h) / 2, w, h);
             using (var b = new SolidBrush(back)) g.FillRectangle(b, r);
             TextRenderer.DrawText(g, text, Small, r, fore,
