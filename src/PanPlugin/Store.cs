@@ -42,6 +42,7 @@ namespace PanPlugin
                         if (s.Customers == null) s.Customers = new List<Customer>();
                         if (s.Entries == null) s.Entries = new List<LedgerEntry>();
                         if (s.ImportedRefs == null) s.ImportedRefs = new HashSet<string>(StringComparer.Ordinal);
+                        s.MigratePeriods();
                         return s;
                     }
                 }
@@ -62,6 +63,28 @@ namespace PanPlugin
             File.WriteAllText(tmp, json);
             if (File.Exists(FilePath)) File.Delete(FilePath);
             File.Move(tmp, FilePath);
+        }
+
+        /// <summary>
+        /// 兼容旧账本：旧指纹不含账期（如 refund|客户|4|68），按记录的来源文件名／日期
+        /// 补出账期并生成新指纹。旧指纹同时保留，方便回退到旧版本使用同一份账本。
+        /// 幂等：每次启动重算结果一致，无需写盘即可保证重复导入仍被拦住。
+        /// </summary>
+        private void MigratePeriods()
+        {
+            foreach (var e in Entries)
+            {
+                if (string.IsNullOrEmpty(e.Period))
+                    e.Period = Period.FromFileName(e.Source, e.CreatedAt);
+                if (string.IsNullOrEmpty(e.Ref)) continue;
+
+                var oldRef = e.Ref;
+                var newRef = Period.WithPeriod(oldRef, e.Period);
+                if (newRef == oldRef) continue;   // 已是新格式
+                ImportedRefs.Add(oldRef);
+                ImportedRefs.Add(newRef);
+                e.Ref = newRef;
+            }
         }
 
         public int CreditBalance(string customerId)

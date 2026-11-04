@@ -289,7 +289,10 @@ namespace PanPlugin
                         type = "其他"; content = "";
                         break;
                 }
-                var it = new ListViewItem(new[] { e.CreatedAt.ToString("MM-dd HH:mm"), type, content, e.Source ?? "" });
+                var src = string.IsNullOrEmpty(e.Period)
+                    ? (e.Source ?? "")
+                    : "[" + e.Period + "] " + (e.Source ?? "");
+                var it = new ListViewItem(new[] { e.CreatedAt.ToString("MM-dd HH:mm"), type, content, src });
                 it.Tag = e;
                 _lvHistory.Items.Add(it);
             }
@@ -321,8 +324,15 @@ namespace PanPlugin
                 _store.LastFolder = Path.GetDirectoryName(dlg.FileName);
                 try
                 {
+                    var fileName = Path.GetFileName(dlg.FileName);
                     var parsed = BupanExcelParser.Parse(dlg.FileName);
-                    CommitImport(parsed, "补盘名单 " + Path.GetFileName(dlg.FileName));
+                    string period;
+                    if (!ConfirmPeriod(fileName, parsed.SuggestedPeriod, "补盘名单", out period))
+                    {
+                        SetStatus("已取消导入（未确认账期），未写入任何数据。");
+                        return;
+                    }
+                    CommitImport(parsed, "补盘名单 " + fileName, period);
                 }
                 catch (Exception ex)
                 {
@@ -344,8 +354,15 @@ namespace PanPlugin
                 _store.LastFolder = Path.GetDirectoryName(dlg.FileName);
                 try
                 {
-                    var parsed = RefundTextParser.Parse(File.ReadAllLines(dlg.FileName), Path.GetFileName(dlg.FileName));
-                    CommitImport(parsed, "退款名单 " + Path.GetFileName(dlg.FileName));
+                    var fileName = Path.GetFileName(dlg.FileName);
+                    var parsed = RefundTextParser.Parse(File.ReadAllLines(dlg.FileName), fileName);
+                    string period;
+                    if (!ConfirmPeriod(fileName, parsed.SuggestedPeriod, "退款名单", out period))
+                    {
+                        SetStatus("已取消导入（未确认账期），未写入任何数据。");
+                        return;
+                    }
+                    CommitImport(parsed, "退款名单 " + fileName, period);
                 }
                 catch (Exception ex)
                 {
@@ -359,8 +376,21 @@ namespace PanPlugin
             return !string.IsNullOrEmpty(dir) && Directory.Exists(dir) ? dir : Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
         }
 
-        /// <summary>导入核心：客户归属（自动/关联/新建）→ 去重 → 入账。</summary>
-        private void CommitImport(ImportResult parsed, string sourceLabel)
+        /// <summary>导入前确认账期；取消则不导入任何数据。</summary>
+        private bool ConfirmPeriod(string fileName, string suggested, string label, out string period)
+        {
+            period = null;
+            var guess = suggested ?? Period.FromFileName(fileName, DateTime.Now);
+            using (var dlg = new ImportPeriodForm(fileName, guess, label))
+            {
+                if (dlg.ShowDialog(this) != DialogResult.OK) return false;
+                period = dlg.PeriodValue;
+                return true;
+            }
+        }
+
+        /// <summary>导入核心：确认账期 → 客户归属（自动/关联/新建）→ 跨月去重 → 入账。</summary>
+        private void CommitImport(ImportResult parsed, string sourceLabel, string period)
         {
             int linked = 0, created = 0, added = 0, skipped = 0;
 
@@ -398,6 +428,8 @@ namespace PanPlugin
                 foreach (var e in g.Entries)
                 {
                     e.CustomerId = target.Id;
+                    e.Period = period;
+                    e.Ref = Period.WithPeriod(e.Ref, period);
                     if (e.Ref != null && _store.ImportedRefs.Contains(e.Ref)) { skipped++; continue; }
                     if (e.Ref != null) _store.ImportedRefs.Add(e.Ref);
                     _store.Entries.Add(e);
@@ -409,7 +441,7 @@ namespace PanPlugin
             RefreshList();
             RefreshDetail();
 
-            var msg = sourceLabel + "：入账 " + added + " 条，自动/关联归属 " + linked + " 组，新建客户 " + created + " 个，跳过 " + skipped + " 条";
+            var msg = sourceLabel + "（账期 " + Period.Display(period) + "）：入账 " + added + " 条，自动/关联归属 " + linked + " 组，新建客户 " + created + " 个，跳过 " + skipped + " 条";
             if (parsed.SkippedVs2 > 0) msg += "（含 VS2 综合盘 " + parsed.SkippedVs2 + " 条）";
             if (parsed.UnparsedLines.Count > 0)
                 msg += "；⚠ " + parsed.UnparsedLines.Count + " 行无法解析：" + string.Join(" / ", parsed.UnparsedLines.Take(3));

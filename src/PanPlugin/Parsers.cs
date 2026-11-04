@@ -17,6 +17,8 @@ namespace PanPlugin
     public class ImportResult
     {
         public List<ParsedGroup> Groups = new List<ParsedGroup>();
+        /// <summary>从文件名／数据日期推断的账期，导入前会弹窗让用户确认或修改。</summary>
+        public string SuggestedPeriod;
         public int SkippedVs2;
         public int SkippedUnknown;
         public int SkippedDuplicate;
@@ -81,6 +83,7 @@ namespace PanPlugin
 
                 var fileName = System.IO.Path.GetFileName(path);
                 var byCustomer = new Dictionary<string, ParsedGroup>(StringComparer.OrdinalIgnoreCase);
+                var dateCounts = new Dictionary<string, int>();
 
                 int lastRow = sheet.LastRowUsed().RowNumber();
                 for (int r = headerRowNum + 1; r <= lastRow; r++)
@@ -119,6 +122,11 @@ namespace PanPlugin
                     }
 
                     var status = cStatus > 0 ? Text(r, cStatus).Trim() : "";
+                    var created = ParseDate(cDate > 0 ? sheet.Cell(r, cDate) : null);
+                    var ym = created.ToString("yyyy-MM");
+                    int n;
+                    dateCounts.TryGetValue(ym, out n);
+                    dateCounts[ym] = n + 1;
                     var entry = new LedgerEntry
                     {
                         Id = Guid.NewGuid().ToString("N"),
@@ -128,10 +136,20 @@ namespace PanPlugin
                         Ref = dedupRef,
                         Source = fileName,
                         Note = "状态:" + status,
-                        CreatedAt = ParseDate(cDate > 0 ? sheet.Cell(r, cDate) : null)
+                        CreatedAt = created
                     };
                     g.Entries.Add(entry);
                 }
+
+                // 文件名优先（如「河南10月补盘.xlsx」）；没写月份时用明细中出现最多的创建日期年月。
+                DateTime dataDate = DateTime.Now;
+                if (dateCounts.Count > 0)
+                {
+                    var best = dateCounts.OrderByDescending(kv => kv.Value).First().Key;
+                    DateTime d;
+                    if (DateTime.TryParse(best + "-01", out d)) dataDate = d;
+                }
+                result.SuggestedPeriod = Period.FromFileName(fileName, dataDate);
                 } // using (wb)
             } // using (fs/ms)
             return result;
@@ -230,6 +248,7 @@ namespace PanPlugin
         public static ImportResult Parse(string[] lines, string sourceName)
         {
             var result = new ImportResult();
+            result.SuggestedPeriod = Period.FromFileName(sourceName, DateTime.Now);
             foreach (var rawLine in lines)
             {
                 var line = rawLine.Trim();

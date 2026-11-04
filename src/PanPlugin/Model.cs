@@ -132,6 +132,7 @@ namespace PanPlugin
         public DateTime? ProcessedAt { get; set; }
         public string Note { get; set; }
         public string Source { get; set; }        // 来源文件名 / "手工"
+        public string Period { get; set; }        // 账期 yyyy-MM（导入时确认，用于跨月去重）
         public DateTime CreatedAt { get; set; } = DateTime.Now;
         public string Ref { get; set; }           // 外部主键（工单编号 / 退款行指纹），用于去重
     }
