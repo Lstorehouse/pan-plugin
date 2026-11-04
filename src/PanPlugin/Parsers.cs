@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using ClosedXML.Excel;
 
@@ -28,35 +29,52 @@ namespace PanPlugin
         public static ImportResult Parse(string path)
         {
             var result = new ImportResult();
-            using (var wb = new XLWorkbook(path))
+            // 先读进内存再解析：用户常把月度名单开在 Excel 里，ClosedXML 直接按路径打开
+            // 会因共享模式冲突抛「文件正由另一进程使用」。
+            // 显式 FileShare.ReadWrite 允许与 Excel 的读写句柄共存；内存流只读、源文件不被改动。
+            using (var fs = new System.IO.FileStream(path, System.IO.FileMode.Open,
+                       System.IO.FileAccess.Read, System.IO.FileShare.ReadWrite))
+            using (var ms = new System.IO.MemoryStream())
             {
-                IXLWorksheet sheet = FindDetailSheet(wb);
+                fs.CopyTo(ms);
+                ms.Position = 0;
+                using (var wb = new XLWorkbook(ms))
+                {
+                int headerRowNum;
+                IXLWorksheet sheet = FindDetailSheet(wb, out headerRowNum);
                 if (sheet == null)
-                    throw new Exception("找不到明细底表：没有哪个工作表包含“申请补偿的耗材种类”表头。");
+                    throw new Exception("找不到明细底表：需要一个同时含「工单编号」和「耗材种类」两列的工作表。\n"
+                        + DescribeSheets(wb));
 
-                var header = new Dictionary<string, int>();
-                var headerRow = sheet.FirstRowUsed();
-                var lastCol = headerRow.LastCellUsed().Address.ColumnNumber;
-                for (int c = 1; c <= lastCol; c++)
+                // 表头按「归一化后的表头名 → 列号」收集；表头行可能不是第 1 行。
+                var header = new List<KeyValuePair<string, int>>();
+                int headerLastCol = Math.Min(sheet.LastColumnUsed().ColumnNumber(), 100);
+                for (int c = 1; c <= headerLastCol; c++)
                 {
-                    var raw = sheet.Cell(1, c).GetString();
-                    if (string.IsNullOrWhiteSpace(raw)) continue;
-                    // 表头可能内含换行/空白（如 "\n处理人"）
-                    var key = Regex.Replace(raw, @"\s+", "");
-                    header[key] = c;
+                    var key = NormalizeKey(sheet.Cell(headerRowNum, c).GetString());
+                    if (key.Length == 0) continue;
+                    header.Add(new KeyValuePair<string, int>(key, c));
                 }
 
-                int Col(string name)
+                int Col(params string[] names)
                 {
-                    int v;
-                    return header.TryGetValue(name, out v) ? v : 0;
+                    // 先精确匹配，再退化为「包含」匹配（容忍全角括号、表头附注等差异）
+                    foreach (var n in names)
+                        foreach (var kv in header)
+                            if (kv.Key == n) return kv.Value;
+                    foreach (var n in names)
+                        foreach (var kv in header)
+                            if (kv.Key.Contains(n)) return kv.Value;
+                    return 0;
                 }
+
+                string Text(int r, int c) { return c > 0 ? sheet.Cell(r, c).GetString() : ""; }
 
                 int cOrder = Col("工单编号");
                 int cDate = Col("创建日期");
-                int cType = Col("申请补偿的耗材种类");
-                int cQty = Col("申请补偿的耗材数量");
-                int cHospital = Col("提交时装机设备医院(提交时系统匹配)");
+                int cType = Col("申请补偿的耗材种类", "耗材种类");
+                int cQty = Col("申请补偿的耗材数量", "耗材数量");
+                int cHospital = Col("提交时装机设备医院(提交时系统匹配)", "提交时装机设备医院", "装机设备医院");
                 int cStdName = Col("标准医院名称");
                 int cStdCode = Col("标准医院代码");
                 int cStatus = Col("状态");
@@ -64,11 +82,12 @@ namespace PanPlugin
                 var fileName = System.IO.Path.GetFileName(path);
                 var byCustomer = new Dictionary<string, ParsedGroup>(StringComparer.OrdinalIgnoreCase);
 
-                var lastRow = sheet.LastRowUsed().RowNumber();
-                for (int r = 2; r <= lastRow; r++)
+                int lastRow = sheet.LastRowUsed().RowNumber();
+                for (int r = headerRowNum + 1; r <= lastRow; r++)
                 {
-                    var typeText = sheet.Cell(r, cType).GetString();
-                    if (string.IsNullOrWhiteSpace(typeText) && string.IsNullOrWhiteSpace(sheet.Cell(r, cOrder).GetString()))
+                    var typeText = Text(r, cType);
+                    var orderNo = Text(r, cOrder).Trim();
+                    if (string.IsNullOrWhiteSpace(typeText) && string.IsNullOrWhiteSpace(orderNo))
                         continue; // 空行
 
                     var dt = DiscTypes.FromExcelName(typeText);
@@ -76,18 +95,17 @@ namespace PanPlugin
                     if (dt == DiscType.Unknown) { result.SkippedUnknown++; continue; }
 
                     // 客户名：优先标准医院名称，其次装机医院
-                    var name = sheet.Cell(r, cStdName).GetString().Trim();
-                    if (string.IsNullOrEmpty(name)) name = sheet.Cell(r, cHospital).GetString().Trim();
+                    var name = Text(r, cStdName).Trim();
+                    if (string.IsNullOrEmpty(name)) name = Text(r, cHospital).Trim();
                     if (string.IsNullOrEmpty(name)) { result.SkippedUnknown++; continue; }
 
-                    var orderNo = sheet.Cell(r, cOrder).GetString().Trim();
                     var dedupRef = "bupan|" + orderNo;
                     if (orderNo.Length == 0) dedupRef = "bupanrow|" + fileName + "|" + r;
 
                     int qty = 1;
                     if (cQty > 0)
                     {
-                        var q = sheet.Cell(r, cQty).GetString().Trim();
+                        var q = Text(r, cQty).Trim();
                         int qv;
                         if (int.TryParse(q, out qv) && qv > 0) qty = qv;
                     }
@@ -100,7 +118,7 @@ namespace PanPlugin
                         result.Groups.Add(g);
                     }
 
-                    var status = cStatus > 0 ? sheet.Cell(r, cStatus).GetString().Trim() : "";
+                    var status = cStatus > 0 ? Text(r, cStatus).Trim() : "";
                     var entry = new LedgerEntry
                     {
                         Id = Guid.NewGuid().ToString("N"),
@@ -110,35 +128,84 @@ namespace PanPlugin
                         Ref = dedupRef,
                         Source = fileName,
                         Note = "状态:" + status,
-                        CreatedAt = ParseDate(sheet.Cell(r, cDate))
+                        CreatedAt = ParseDate(cDate > 0 ? sheet.Cell(r, cDate) : null)
                     };
                     g.Entries.Add(entry);
                 }
-            }
+                } // using (wb)
+            } // using (fs/ms)
             return result;
         }
 
-        private static IXLWorksheet FindDetailSheet(XLWorkbook wb)
+        /// <summary>归一化表头：去空白、全角括号转半角，容忍表头里的换行。</summary>
+        private static string NormalizeKey(string raw)
         {
+            if (string.IsNullOrEmpty(raw)) return "";
+            return Regex.Replace(raw.Replace('（', '(').Replace('）', ')'), @"\s+", "");
+        }
+
+        /// <summary>
+        /// 找明细底表：同一「表头行」里同时出现「工单编号」和「耗材种类」两列。
+        /// 这两个词分属不同单元格——旧版误写成要求同一个单元格同时含二者，导致永远找不到底表。
+        /// 表头行允许在第 1~10 行（兼容顶部带标题行/说明行的导出文件）。
+        /// </summary>
+        private static IXLWorksheet FindDetailSheet(XLWorkbook wb, out int headerRowNum)
+        {
+            headerRowNum = 0;
             foreach (var ws in wb.Worksheets)
             {
-                var headerRow = ws.FirstRowUsed();
-                if (headerRow == null) continue;
-                var lastCol = headerRow.LastCellUsed().Address.ColumnNumber;
-                for (int c = 1; c <= lastCol; c++)
+                var first = ws.FirstRowUsed();
+                if (first == null) continue;
+                int firstRow = first.RowNumber();
+                int maxRow = Math.Min(ws.LastRowUsed().RowNumber(), 10);
+                int maxCol = Math.Min(ws.LastColumnUsed().ColumnNumber(), 100);
+                for (int r = firstRow; r <= maxRow; r++)
                 {
-                    var key = Regex.Replace(headerRow.Cell(c).GetString() ?? "", @"\s+", "");
-                    if (key.Contains("申请补偿的耗材种类") && key.Contains("工单编号"))
+                    bool hasOrder = false, hasType = false;
+                    for (int c = 1; c <= maxCol; c++)
+                    {
+                        var key = NormalizeKey(ws.Cell(r, c).GetString());
+                        if (key.Contains("工单编号")) hasOrder = true;
+                        if (key.Contains("耗材种类")) hasType = true;
+                    }
+                    if (hasOrder && hasType)
+                    {
+                        headerRowNum = r;
                         return ws;
+                    }
                 }
             }
             return null;
+        }
+
+        /// <summary>找不到底表时给出可诊断的信息（工作表名 + 首行表头片段）。</summary>
+        private static string DescribeSheets(XLWorkbook wb)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("文件内的工作表：");
+            foreach (var ws in wb.Worksheets)
+            {
+                var first = ws.FirstRowUsed();
+                var parts = new List<string>();
+                if (first != null)
+                {
+                    int maxCol = Math.Min(ws.LastColumnUsed().ColumnNumber(), 30);
+                    for (int c = 1; c <= maxCol && parts.Count < 8; c++)
+                    {
+                        var v = NormalizeKey(ws.Cell(first.RowNumber(), c).GetString());
+                        if (v.Length > 0) parts.Add(v);
+                    }
+                }
+                sb.AppendLine("  [" + ws.Name + "] " + string.Join(" | ", parts));
+            }
+            return sb.ToString();
         }
 
         private static DateTime ParseDate(IXLCell cell)
         {
             try
             {
+                if (cell == null) return DateTime.Now;
                 if (cell.DataType == XLDataType.DateTime) return cell.GetDateTime();
                 var s = cell.GetString();
                 DateTime d;
