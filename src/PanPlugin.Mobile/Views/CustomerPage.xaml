@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="PanPlugin.Mobile.Views.CustomerPage"
+             Title="客户"
+             BackgroundColor="{StaticResource PageColor}">
+    <VerticalStackLayout Padding="16" Spacing="12">
+        <Label Text="客户详情"
+               FontSize="22" FontAttributes="Bold"
+               TextColor="{StaticResource TextPrimaryColor}" />
+        <Label Text="M1 骨架：从首页点进客户后，这里用分栏显示待补清单与历史账目。"
+               FontSize="13" TextColor="{StaticResource TextSecondaryColor}" />
+        <Frame Padding="14" BackgroundColor="White" BorderColor="#D8DEE6">
+            <VerticalStackLayout Spacing="6">
+                <Label Text="待补清单" FontSize="15" FontAttributes="Bold"
+                       TextColor="{StaticResource DangerColor}" />
+                <Label Text="勾选标记已补发、手工新增补盘将在这里操作。"
+                       FontSize="13" TextColor="{StaticResource TextSecondaryColor}" />
+            </VerticalStackLayout>
+        </Frame>
+        <Frame Padding="14" BackgroundColor="White" BorderColor="#D8DEE6">
+            <VerticalStackLayout Spacing="6">
+                <Label Text="历史账目" FontSize="15" FontAttributes="Bold"
+                       TextColor="{StaticResource PrimaryColor}" />
+                <Label Text="撤销、转移账目、增减抵扣将在这里操作。"
+                       FontSize="13" TextColor="{StaticResource TextSecondaryColor}" />
+            </VerticalStackLayout>
+        </Frame>
+    </VerticalStackLayout>
+</ContentPage>

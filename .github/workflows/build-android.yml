@@ -1,0 +1,33 @@
+name: build-android
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Install Android workload
+        shell: pwsh
+        run: dotnet workload install android --skip-manifest-update
+
+      - name: Build APK (Debug, internal testing)
+        shell: pwsh
+        run: dotnet build src/PanPlugin.Mobile/PanPlugin.Mobile.csproj -c Debug -f net8.0-android -v:m -nologo
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: PanPlugin-Android-M1
+          path: src/PanPlugin.Mobile/bin/Debug/net8.0-android/*.apk
+          if-no-files-found: error

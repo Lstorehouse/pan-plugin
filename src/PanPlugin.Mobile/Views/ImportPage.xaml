@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="PanPlugin.Mobile.Views.ImportPage"
+             Title="导入"
+             BackgroundColor="{StaticResource PageColor}">
+    <VerticalStackLayout Padding="16" Spacing="12">
+        <Label Text="导入月度名单"
+               FontSize="22" FontAttributes="Bold"
+               TextColor="{StaticResource TextPrimaryColor}" />
+        <Label Text="M1 骨架：M2 接入文件选择器后，可从微信或文件管理器选择 xlsx / txt。"
+               FontSize="13" TextColor="{StaticResource TextSecondaryColor}" />
+        <Button Text="选择补盘名单（.xlsx）" BackgroundColor="{StaticResource PrimaryColor}"
+                TextColor="White" />
+        <Button Text="选择退款名单（.txt)" BackgroundColor="White"
+                TextColor="{StaticResource PrimaryColor}" BorderColor="#B5D4F4" />
+        <Frame Padding="14" BackgroundColor="White" BorderColor="#D8DEE6">
+            <VerticalStackLayout Spacing="6">
+                <Label Text="账期确认" FontSize="15" FontAttributes="Bold"
+                       TextColor="{StaticResource TextPrimaryColor}" />
+                <Label Text="导入前弹出账期（yyyy-MM）供确认，改月份后按账期去重。"
+                       FontSize="13" TextColor="{StaticResource TextSecondaryColor}" />
+            </VerticalStackLayout>
+        </Frame>
+        <Label Text="源文件保持只读，所有增减都记在本地账本。"
+               FontSize="12" TextColor="{StaticResource TextSecondaryColor}" />
+    </VerticalStackLayout>
+</ContentPage>

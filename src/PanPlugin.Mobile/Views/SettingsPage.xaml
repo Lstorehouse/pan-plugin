@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="PanPlugin.Mobile.Views.SettingsPage"
+             Title="我的"
+             BackgroundColor="{StaticResource PageColor}">
+    <VerticalStackLayout Padding="16" Spacing="12">
+        <Label Text="账本与备份"
+               FontSize="22" FontAttributes="Bold"
+               TextColor="{StaticResource TextPrimaryColor}" />
+        <Label Text="M1 骨架：账本将存在 App 私有目录，与电脑通过备份 JSON 互传。"
+               FontSize="13" TextColor="{StaticResource TextSecondaryColor}" />
+        <Button Text="导出备份" BackgroundColor="{StaticResource PrimaryColor}"
+                TextColor="White" />
+        <Button Text="从备份恢复" BackgroundColor="White"
+                TextColor="{StaticResource PrimaryColor}" BorderColor="#B5D4F4" />
+        <Frame Padding="14" BackgroundColor="White" BorderColor="#D8DEE6">
+            <VerticalStackLayout Spacing="6">
+                <Label Text="桌面版 → 手机版" FontSize="15" FontAttributes="Bold"
+                       TextColor="{StaticResource TextPrimaryColor}" />
+                <Label Text="源文件只读、账期去重、抵扣规则、归档与转移日志全部沿用。"
+                       FontSize="13" TextColor="{StaticResource TextSecondaryColor}" />
+            </VerticalStackLayout>
+        </Frame>
+        <Label Text="版本 M1（骨架）" FontSize="12"
+               TextColor="{StaticResource TextSecondaryColor}" />
+    </VerticalStackLayout>
+</ContentPage>
