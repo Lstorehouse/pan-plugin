@@ -13,6 +13,9 @@
     <Nullable>disable</Nullable>
     <!-- .NET 10 模板默认 API 24，避免 Java 默认接口方法的 desugaring 崩溃 -->
     <SupportedOSPlatformVersion>24.0</SupportedOSPlatformVersion>
+    <!-- .NET 10 默认 targetSdk 36（Android 16），旧系统与部分国产 ROM 会「解析软件包时出现问题」。
+         降到 34（Android 14）：内测分发不需要追新 API，覆盖面更广。 -->
+    <TargetSdkVersion>34</TargetSdkVersion>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
 

@@ -79,9 +79,10 @@ Win7+ 单机桌面程序：读取每月**补盘名单（xlsx）**与**退款名�
 
 同一仓库的 `src/PanPlugin.Mobile/` 是 .NET MAUI 项目，只构建 Android。当前为 **M4**：在 M3 的客户搜索、详情与手工记账基础上，补齐账目维护能力——历史账目勾选撤销/转移、转移记录整批撤销、客户主名与别名管理、合并客户。
 
-- **构建**：push 到 `main` 后，Actions 的 `build-android` 工作流安装 `maui-android` workload、编译 Debug APK，上传为 `PanPlugin-Android-M1` 产物。
-- **安装**：下载 APK 传到手机直接安装（Android 7.0 / API 24 以上）；首次安装需在手机上允许「安装未知来源应用」。
+- **构建**：push 到 `main` 后，Actions 的 `build-android` 工作流安装所需 workload、编译 Debug APK，上传为 `PanPlugin-Android` 产物。
+- **安装**：下载 artifact 的 zip、解压后只装里面**唯一那个 `*-Signed.apk`**（CI 只上传已签名包）；传到手机直接安装（Android 7.0 / API 24 以上）；首次安装需在手机上允许「安装未知来源应用」。如果提示「解析软件包时出现问题」，先确认没有装到旧的未签名包。
 - **签名**：目前用 Android 默认调试签名，仅适合内测；正式发布时再换成你自己的发布 keystore。
+- **兼容性**：`targetSdk` 固定为 34（Android 14），不用 .NET 10 默认的 36，避免旧系统与国产 ROM 解析失败；launcher Activity 显式 `Exported = true`。详见 ADR-0013。
 - **数据**：账本为 App 私有目录下的 `store.json`，备份为同目录 `Backups/store-*.json`，最多保留 3 份；导出/恢复通过系统分享与文件选择器完成，源文件永不改写。
 - **M4 操作**：详情页历史账目勾选后可「撤销所选」（金额记录整条删除、补发标记退回待发）或「转移所选」（整批转到别的客户并记一条转移日志）；「转移记录」可整批撤销且自动跳过已被再次转移的条目；「管理别名」支持主名改名、别名增改删与转移给其他客户；「合并到另一客户」会先自动备份再并档，可用「我的 → 从备份恢复」还原。
 - **共享边界**：`Model.cs` / `Period.cs`（纯逻辑） / `Parsers.cs` / `Store.cs` / `ImportService.cs` / `CustomerService.cs` / `MaintenanceService.cs` 为两端共用；`Period.UI.cs` 与所有 `*Form.cs` 只留在桌面端。详见 ADR-0010、ADR-0011、ADR-0012。

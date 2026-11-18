@@ -23,11 +23,20 @@ jobs:
 
       - name: Build APK (Debug, internal testing)
         shell: pwsh
-        run: dotnet build src/PanPlugin.Mobile/PanPlugin.Mobile.csproj -c Debug -f net10.0-android -v:m -nologo
+        # EmbedAssembliesIntoApk: 默认 Debug 用快速部署，程序集不进包，手动安装会解析失败/闪退。
+        run: dotnet build src/PanPlugin.Mobile/PanPlugin.Mobile.csproj -c Debug -f net10.0-android -p:EmbedAssembliesIntoApk=true -v:m -nologo
 
-      - name: Upload APK
+      - name: Verify signed APK exists
+        shell: pwsh
+        run: |
+          $apk = Get-ChildItem "src/PanPlugin.Mobile/bin/Debug/net10.0-android/*-Signed.apk" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $apk) { throw "构建产物中没有已签名 APK，请检查签名配置。" }
+          Write-Host "Signed APK: $($apk.Name) ($($apk.Length) bytes)"
+
+      - name: Upload signed APK
         uses: actions/upload-artifact@v4
         with:
-          name: PanPlugin-Android-M1
-          path: src/PanPlugin.Mobile/bin/Debug/net10.0-android/*.apk
+          # 只上传 *-Signed.apk：同目录的 .apk 是未签名的中间产物，装到手机会报「解析软件包时出现问题」。
+          name: PanPlugin-Android
+          path: src/PanPlugin.Mobile/bin/Debug/net10.0-android/*-Signed.apk
           if-no-files-found: error
