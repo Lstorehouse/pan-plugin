@@ -21,13 +21,18 @@
     <MauiSplashScreen Include="Resources/Splash/splash.svg" />
   </ItemGroup>
 
-  <!--
-    M2 起在这里链接桌面版业务源码，保证规则只有一份：
+  <!-- M2：链接桌面端已拆出的纯业务源码，规则只有一份；WinForms 弹窗不链接。 -->
+  <ItemGroup>
     <Compile Include="../PanPlugin/Model.cs" Link="Shared/Model.cs" />
-    <Compile Include="../PanPlugin/Store.cs" Link="Shared/Store.cs" />
+    <Compile Include="../PanPlugin/Period.cs" Link="Shared/Period.cs" />
     <Compile Include="../PanPlugin/Parsers.cs" Link="Shared/Parsers.cs" />
-    注意 Period.cs 顶部含 System.Windows.Forms 的导入弹窗，M2 需先拆分纯逻辑与窗体。
-    M1 只交付可安装、可切换四个 Tab 的骨架，不引入业务代码与任何真实数据。
-  -->
+    <Compile Include="../PanPlugin/Store.cs" Link="Shared/Store.cs" />
+    <Compile Include="../PanPlugin/ImportService.cs" Link="Shared/ImportService.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ClosedXML" Version="0.102.2" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
 
 </Project>

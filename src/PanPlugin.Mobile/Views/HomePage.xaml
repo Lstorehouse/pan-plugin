@@ -8,7 +8,7 @@
         <Label Text="生化盘客户管理"
                FontSize="24" FontAttributes="Bold"
                TextColor="{StaticResource TextPrimaryColor}" />
-        <Label Text="M1 骨架：搜索与列表将在 M3 接入"
+        <Label x:Name="SubtitleLabel" Text="M2：账本已在本地，搜索与列表将在 M3 接入"
                FontSize="13" TextColor="{StaticResource TextSecondaryColor}" />
         <SearchBar Placeholder="输入客户名或别名…"
                    BackgroundColor="White" />
@@ -16,14 +16,14 @@
             <Frame Grid.Column="0" Padding="14" BackgroundColor="White" BorderColor="#D8DEE6">
                 <VerticalStackLayout Spacing="4">
                     <Label Text="待补盘" FontSize="12" TextColor="{StaticResource TextSecondaryColor}" />
-                    <Label Text="— 张" FontSize="26" FontAttributes="Bold"
+                    <Label x:Name="PendingLabel" Text="— 张" FontSize="26" FontAttributes="Bold"
                            TextColor="{StaticResource DangerColor}" />
                 </VerticalStackLayout>
             </Frame>
             <Frame Grid.Column="1" Padding="14" BackgroundColor="White" BorderColor="#D8DEE6">
                 <VerticalStackLayout Spacing="4">
                     <Label Text="抵扣余额" FontSize="12" TextColor="{StaticResource TextSecondaryColor}" />
-                    <Label Text="¥—" FontSize="26" FontAttributes="Bold"
+                    <Label x:Name="BalanceLabel" Text="¥—" FontSize="26" FontAttributes="Bold"
                            TextColor="{StaticResource PrimaryColor}" />
                 </VerticalStackLayout>
             </Frame>

@@ -10,10 +10,12 @@
                TextColor="{StaticResource TextPrimaryColor}" />
         <Label Text="M1 骨架：账本将存在 App 私有目录，与电脑通过备份 JSON 互传。"
                FontSize="13" TextColor="{StaticResource TextSecondaryColor}" />
-        <Button Text="导出备份" BackgroundColor="{StaticResource PrimaryColor}"
-                TextColor="White" />
-        <Button Text="从备份恢复" BackgroundColor="White"
-                TextColor="{StaticResource PrimaryColor}" BorderColor="#B5D4F4" />
+        <Button x:Name="ExportButton" Text="导出备份"
+                BackgroundColor="{StaticResource PrimaryColor}" TextColor="White"
+                Clicked="OnExportBackup" />
+        <Button x:Name="ImportButton" Text="从备份恢复"
+                BackgroundColor="White" TextColor="{StaticResource PrimaryColor}"
+                BorderColor="#B5D4F4" Clicked="OnRestoreBackup" />
         <Frame Padding="14" BackgroundColor="White" BorderColor="#D8DEE6">
             <VerticalStackLayout Spacing="6">
                 <Label Text="桌面版 → 手机版" FontSize="15" FontAttributes="Bold"
@@ -22,7 +24,7 @@
                        FontSize="13" TextColor="{StaticResource TextSecondaryColor}" />
             </VerticalStackLayout>
         </Frame>
-        <Label Text="版本 M1（骨架）" FontSize="12"
+        <Label x:Name="StatusLabel" Text="版本 M2（本地账本 + 导入/备份）" FontSize="12"
                TextColor="{StaticResource TextSecondaryColor}" />
     </VerticalStackLayout>
 </ContentPage>

@@ -1,9 +1,25 @@
-namespace PanPlugin.Mobile.Views;
+using System.Linq;
+using PanPlugin.Mobile.Services;
 
-public partial class HomePage : ContentPage
+namespace PanPlugin.Mobile.Views
 {
-    public HomePage()
+    public partial class HomePage : ContentPage
     {
-        InitializeComponent();
+        public HomePage()
+        {
+            InitializeComponent();
+        }
+
+        protected override void OnAppearing()
+        {
+            base.OnAppearing();
+            var store = StoreService.Current;
+            var pending = store.Entries.Count(e =>
+                (e.Kind == EntryKind.BupanOrder || e.Kind == EntryKind.ManualBupan) && !e.Processed);
+            var balance = store.Customers.Sum(c => store.CreditBalance(c.Id));
+            PendingLabel.Text = pending + " 张";
+            BalanceLabel.Text = "¥" + balance;
+            SubtitleLabel.Text = "本地账本：" + store.Customers.Count + " 家客户 · 搜索与列表将在 M3 接入";
+        }
     }
 }

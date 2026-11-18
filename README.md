@@ -75,14 +75,15 @@ Win7+ 单机桌面程序：读取每月**补盘名单（xlsx）**与**退款名�
 
 无需本地安装任何开发环境：push 到 GitHub 后，Actions 自动在云端编译，到仓库 **Actions → build → Artifacts** 下载 `PanPlugin-win7`（解压后运行 `PanPlugin.exe`）。
 
-## Android 版（M1 骨架）
+## Android 版（M2：本地账本 + 导入/备份）
 
-同一仓库的 `src/PanPlugin.Mobile/` 是 .NET MAUI 项目，只构建 Android。当前是 **M1 骨架**：底部四个 Tab（首页 / 客户 / 导入 / 我的）可切换，页面内容为占位，**尚未接入业务数据、文件导入与备份**。
+同一仓库的 `src/PanPlugin.Mobile/` 是 .NET MAUI 项目，只构建 Android。当前为 **M2**：桌面端业务源码通过 `<Compile Include="../PanPlugin/...">` 链接，规则只有一份；账本存在 App 私有目录，可从微信/文件管理器选择 xlsx/txt 导入，并导出/恢复备份 JSON。客户搜索、详情与手工记账仍将在 M3 接入。
 
 - **构建**：push 到 `main` 后，Actions 的 `build-android` 工作流安装 `maui-android` workload、编译 Debug APK，上传为 `PanPlugin-Android-M1` 产物。
 - **安装**：下载 APK 传到手机直接安装（Android 7.0 / API 24 以上）；首次安装需在手机上允许「安装未知来源应用」。
-- **签名**：M1 用 Android 默认调试签名，仅适合内测；正式发布时再换成你自己的发布 keystore。
-- **数据**：M1 不读写任何真实账本数据。M2 起通过 `<Compile Include="../PanPlugin/...">` 链接桌面版业务源码，规则只有一份。
+- **签名**：目前用 Android 默认调试签名，仅适合内测；正式发布时再换成你自己的发布 keystore。
+- **数据**：账本为 App 私有目录下的 `store.json`，备份为同目录 `Backups/store-*.json`，最多保留 3 份；导出/恢复通过系统分享与文件选择器完成，源文件永不改写。
+- **共享边界**：`Model.cs` / `Period.cs`（纯逻辑） / `Parsers.cs` / `Store.cs` / `ImportService.cs` 为两端共用；`Period.UI.cs` 与所有 `*Form.cs` 只留在桌面端。详见 ADR-0010。
 - **既定路线**：Android 单机 + 从微信/文件管理器选文件 + 本地账本与电脑通过备份 JSON 互传；不引入账号和服务器。
 
 ## 开发

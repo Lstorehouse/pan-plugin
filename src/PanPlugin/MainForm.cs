@@ -944,70 +944,22 @@ namespace PanPlugin
         /// <summary>导入核心：确认账期 → 客户归属（自动/关联/新建）→ 跨月去重 → 入账。</summary>
         private void CommitImport(ImportResult parsed, string sourceLabel, string period)
         {
-            int linked = 0, created = 0, added = 0, skipped = 0, revived = 0;
-
-            foreach (var g in parsed.Groups)
+            Customer Resolve(string rawName, List<Customer> candidates)
             {
-                Customer target = _store.Customers.FirstOrDefault(c => c.Matches(g.RawName));
-                if (target == null)
+                using (var dlg = new LinkCustomerForm(rawName, candidates))
                 {
-                    // 模糊候选：互相包含，且排除用户已明确解除过关联的客户
-                    var candidates = _store.Customers.Where(c =>
-                        !_store.ExcludedLinks.Contains(Store.LinkKey(g.RawName, c.Id)) &&
-                        (c.Name.IndexOf(g.RawName, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                         g.RawName.IndexOf(c.Name, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                         c.Aliases.Any(a => a.IndexOf(g.RawName, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                            g.RawName.IndexOf(a, StringComparison.OrdinalIgnoreCase) >= 0))).ToList();
-
-                    using (var dlg = new LinkCustomerForm(g.RawName, candidates))
-                    {
-                        if (dlg.ShowDialog(this) != DialogResult.OK) { skipped += g.Entries.Count; continue; }
-                        if (dlg.Result != null)
-                        {
-                            target = dlg.Result;
-                        }
-                        else
-                        {
-                            target = new Customer { Id = Guid.NewGuid().ToString("N"), Name = dlg.NewName };
-                            _store.Customers.Add(target);
-                            created++;
-                        }
-                    }
-                }
-                else linked++;
-
-                target.AddAlias(g.RawName);
-
-                bool revivedThisGroup = false;
-                foreach (var e in g.Entries)
-                {
-                    e.CustomerId = target.Id;
-                    e.Period = period;
-                    e.Ref = Period.WithPeriod(e.Ref, period);
-                    if (e.Ref != null && _store.ImportedRefs.Contains(e.Ref)) { skipped++; continue; }
-                    if (e.Ref != null) _store.ImportedRefs.Add(e.Ref);
-                    _store.Entries.Add(e);
-                    added++;
-                    // 归档客户下月又有补盘 → 自动重新出现（只有真正入账才算，重复导入不算）
-                    if (!revivedThisGroup && target.Archived &&
-                        (e.Kind == EntryKind.BupanOrder || e.Kind == EntryKind.ManualBupan))
-                    {
-                        ReviveIfArchived(target);
-                        revivedThisGroup = true;
-                        revived++;
-                    }
+                    if (dlg.ShowDialog(this) != DialogResult.OK) return null;
+                    if (dlg.Result != null) return dlg.Result;
+                    return new Customer { Id = Guid.NewGuid().ToString("N"), Name = dlg.NewName };
                 }
             }
 
+            var outcome = ImportService.Commit(_store, parsed, period, Resolve);
             _store.Save();
             RefreshList();
             RefreshDetail();
 
-            var msg = sourceLabel + "（账期 " + Period.Display(period) + "）：入账 " + added + " 条，自动/关联归属 " + linked + " 组，新建客户 " + created + " 个，跳过 " + skipped + " 条";
-            if (parsed.SkippedVs2 > 0) msg += "（含 VS2 综合盘 " + parsed.SkippedVs2 + " 条）";
-            if (revived > 0) msg += "；↻ " + revived + " 个归档客户因新补盘已自动恢复显示";
-            if (parsed.UnparsedLines.Count > 0)
-                msg += "；⚠ " + parsed.UnparsedLines.Count + " 行无法解析：" + string.Join(" / ", parsed.UnparsedLines.Take(3));
+            var msg = outcome.Summary(sourceLabel, parsed, period);
             SetStatus(msg);
             if (parsed.UnparsedLines.Count > 0)
                 MessageBox.Show(msg, "导入完成（有告警）", MessageBoxButtons.OK, MessageBoxIcon.Warning);

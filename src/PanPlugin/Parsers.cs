@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -28,17 +29,30 @@ namespace PanPlugin
     /// <summary>补盘名单 xlsx 解析器（明细底表：一行 = 一张工单，数量恒 1）。</summary>
     public static class BupanExcelParser
     {
+        /// <summary>桌面入口：显式 FileShare.ReadWrite，允许源文件同时被 Excel 打开。</summary>
         public static ImportResult Parse(string path)
         {
-            var result = new ImportResult();
-            // 先读进内存再解析：用户常把月度名单开在 Excel 里，ClosedXML 直接按路径打开
-            // 会因共享模式冲突抛「文件正由另一进程使用」。
-            // 显式 FileShare.ReadWrite 允许与 Excel 的读写句柄共存；内存流只读、源文件不被改动。
-            using (var fs = new System.IO.FileStream(path, System.IO.FileMode.Open,
-                       System.IO.FileAccess.Read, System.IO.FileShare.ReadWrite))
-            using (var ms = new System.IO.MemoryStream())
+            using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            using (var ms = new MemoryStream())
             {
                 fs.CopyTo(ms);
+                ms.Position = 0;
+                return Parse(ms, Path.GetFileName(path));
+            }
+        }
+
+        /// <summary>
+        /// 流入口：Android 文件选择器返回 content:// URI，需以 Stream 传入；
+        /// 桌面路径入口最终也走这里，保证两边解析规则完全一致。
+        /// </summary>
+        public static ImportResult Parse(Stream stream, string fileName)
+        {
+            var result = new ImportResult();
+            // 先完整读进内存再交给 ClosedXML：避免流位置/生命周期问题，源文件保持只读。
+            using (var ms = new MemoryStream())
+            {
+                if (stream.CanSeek) stream.Position = 0;
+                stream.CopyTo(ms);
                 ms.Position = 0;
                 using (var wb = new XLWorkbook(ms))
                 {
@@ -81,7 +95,6 @@ namespace PanPlugin
                 int cStdCode = Col("标准医院代码");
                 int cStatus = Col("状态");
 
-                var fileName = System.IO.Path.GetFileName(path);
                 var byCustomer = new Dictionary<string, ParsedGroup>(StringComparer.OrdinalIgnoreCase);
                 var dateCounts = new Dictionary<string, int>();
 
@@ -151,7 +164,7 @@ namespace PanPlugin
                 }
                 result.SuggestedPeriod = Period.FromFileName(fileName, dataDate);
                 } // using (wb)
-            } // using (fs/ms)
+            } // using (ms)
             return result;
         }
 
@@ -245,6 +258,18 @@ namespace PanPlugin
         private static readonly Regex Anchor = new Regex(@"\d+\s*张", RegexOptions.Compiled);
         private static readonly Regex Pair = new Regex(@"(\d+)\s*张\s*(\d+)\s*元", RegexOptions.Compiled);
 
+        /// <summary>Android 入口：从 content:// 流读取文本，自动识别 UTF-8 BOM。</summary>
+        public static ImportResult Parse(Stream stream, string sourceName)
+        {
+            using (var reader = new StreamReader(stream, Encoding.UTF8, true))
+            {
+                var lines = new List<string>();
+                while (!reader.EndOfStream) lines.Add(reader.ReadLine());
+                return Parse(lines.ToArray(), sourceName);
+            }
+        }
+
+        /// <summary>桌面入口：行数组由调用方读出。</summary>
         public static ImportResult Parse(string[] lines, string sourceName)
         {
             var result = new ImportResult();

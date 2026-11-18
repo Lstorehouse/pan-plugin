@@ -10,6 +10,8 @@ namespace PanPlugin
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+            Store.ErrorReporter = msg => MessageBox.Show(msg, "生化盘插件",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
             Application.Run(new MainForm());
         }
     }

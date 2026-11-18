@@ -8,10 +8,17 @@ namespace PanPlugin
 {
     /// <summary>
     /// 本地持久化（ADR-0001：源文件只读，一切增减记本地账本）。
-    /// 数据存于 %APPDATA%\PanPlugin\store.json。
+    /// 桌面默认存于 %APPDATA%\PanPlugin\store.json；路径可通过构造函数注入，
+    /// 供 Android 使用 AppDataDirectory。本文件不含 WinForms 依赖。
     /// </summary>
     public class Store
     {
+        /// <summary>读取账本失败时的回调。桌面端接 MessageBox，移动端可忽略或写日志。</summary>
+        public static Action<string> ErrorReporter { get; set; }
+
+        /// <summary>最近一次 Load/LoadFrom 的错误信息，成功时为 null。</summary>
+        public static string LastLoadError { get; private set; }
+
         public List<Customer> Customers { get; set; } = new List<Customer>();
         public List<LedgerEntry> Entries { get; set; } = new List<LedgerEntry>();
         /// <summary>已导入过的外部记录指纹（防重复导入）。</summary>
@@ -24,23 +31,60 @@ namespace PanPlugin
         public string LastFolder { get; set; }
 
         [JsonIgnore]
+        private string _filePath;
+        [JsonIgnore]
+        private string _backupDirectory;
+
+        public Store()
+        {
+        }
+
+        /// <summary>注入账本路径；移动端传 FileSystem.AppDataDirectory 下的文件。</summary>
+        public Store(string filePath)
+        {
+            _filePath = filePath;
+        }
+
+        [JsonIgnore]
+        public string FilePath
+        {
+            get { return _filePath ?? DefaultFilePath; }
+        }
+
+        [JsonIgnore]
+        public string BackupDirectory
+        {
+            get { return _backupDirectory ?? BackupDir(); }
+            set { _backupDirectory = value; }
+        }
+
+        [JsonIgnore]
         private static string Dir
         {
             get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PanPlugin"); }
         }
 
-        private static string FilePath
+        [JsonIgnore]
+        private static string DefaultFilePath
         {
             get { return Path.Combine(Dir, "store.json"); }
         }
 
+        /// <summary>桌面入口：读取默认 %APPDATA%\PanPlugin\store.json。</summary>
         public static Store Load()
         {
+            return LoadFrom(DefaultFilePath);
+        }
+
+        /// <summary>路径可注入的读取入口；失败返回绑定该路径的空账本。</summary>
+        public static Store LoadFrom(string filePath)
+        {
+            LastLoadError = null;
             try
             {
-                if (File.Exists(FilePath))
+                if (File.Exists(filePath))
                 {
-                    var json = File.ReadAllText(FilePath);
+                    var json = File.ReadAllText(filePath);
                     var s = JsonConvert.DeserializeObject<Store>(json);
                     if (s != null)
                     {
@@ -49,6 +93,7 @@ namespace PanPlugin
                         if (s.ImportedRefs == null) s.ImportedRefs = new HashSet<string>(StringComparer.Ordinal);
                         if (s.ExcludedLinks == null) s.ExcludedLinks = new HashSet<string>(StringComparer.Ordinal);
                         if (s.TransferBatches == null) s.TransferBatches = new List<TransferBatch>();
+                        s._filePath = filePath;
                         s.MigratePeriods();
                         return s;
                     }
@@ -56,15 +101,16 @@ namespace PanPlugin
             }
             catch (Exception ex)
             {
-                System.Windows.Forms.MessageBox.Show("读取本地数据失败，将使用空数据启动。\n\n" + ex.Message,
-                    "生化盘插件", System.Windows.Forms.MessageBoxButtons.OK, System.Windows.Forms.MessageBoxIcon.Warning);
+                LastLoadError = "读取本地数据失败，将使用空数据启动。\n\n" + ex.Message;
+                if (ErrorReporter != null) ErrorReporter(LastLoadError);
             }
-            return new Store();
+            return new Store(filePath);
         }
 
         public void Save()
         {
-            Directory.CreateDirectory(Dir);
+            var dir = Path.GetDirectoryName(FilePath);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
             var json = JsonConvert.SerializeObject(this, Formatting.Indented);
             var tmp = FilePath + ".tmp";
             File.WriteAllText(tmp, json);
@@ -72,7 +118,7 @@ namespace PanPlugin
             File.Move(tmp, FilePath);
         }
 
-        /// <summary>列出可用备份（程序目录 + 回退目录，按文件名倒序＝最新在前）。</summary>
+        /// <summary>列出桌面可用备份（程序目录 + 回退目录，按文件名倒序＝最新在前）。</summary>
         public static List<string> ListBackups()
         {
             var dirs = new List<string>
@@ -80,6 +126,17 @@ namespace PanPlugin
                 Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Backups"),
                 Path.Combine(Dir, "Backups")
             };
+            return ListBackupsIn(dirs);
+        }
+
+        /// <summary>移动端/注入路径场景：只扫描当前账本对应的备份目录。</summary>
+        public List<string> ListBackupsForCurrent()
+        {
+            return ListBackupsIn(new List<string> { BackupDirectory });
+        }
+
+        private static List<string> ListBackupsIn(IEnumerable<string> dirs)
+        {
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var list = new List<string>();
             foreach (var d in dirs)
@@ -99,7 +156,13 @@ namespace PanPlugin
         /// </summary>
         public static string RestoreFrom(string backupPath)
         {
-            return RestoreFromTo(backupPath, FilePath, BackupDir());
+            return RestoreFromTo(backupPath, DefaultFilePath, BackupDir());
+        }
+
+        /// <summary>注入路径场景的恢复入口。</summary>
+        public string RestoreFromCurrent(string backupPath)
+        {
+            return RestoreFromTo(backupPath, FilePath, BackupDirectory);
         }
 
         /// <summary>
@@ -207,7 +270,7 @@ namespace PanPlugin
         }
 
         /// <summary>
-        /// 备份目录：优先程序目录下的 Backups（用户容易找到、可拷走）；
+        /// 桌面默认备份目录：优先程序目录下的 Backups（用户容易找到、可拷走）；
         /// 程序装在只读位置时回退到 %APPDATA%\PanPlugin\Backups。
         /// </summary>
         public static string BackupDir()
@@ -229,7 +292,7 @@ namespace PanPlugin
         public string Backup(int maxKeep = 3)
         {
             if (!File.Exists(FilePath)) Save();   // 全新安装还没落盘时先写一份
-            var dir = BackupDir();
+            var dir = BackupDirectory;
             Directory.CreateDirectory(dir);
             var dest = Path.Combine(dir, "store-" + DateTime.Now.ToString("yyyyMMdd-HHmmss-fff") + ".json");
             File.Copy(FilePath, dest, false);

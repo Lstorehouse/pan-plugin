@@ -10,10 +10,12 @@
                TextColor="{StaticResource TextPrimaryColor}" />
         <Label Text="M1 骨架：M2 接入文件选择器后，可从微信或文件管理器选择 xlsx / txt。"
                FontSize="13" TextColor="{StaticResource TextSecondaryColor}" />
-        <Button Text="选择补盘名单（.xlsx）" BackgroundColor="{StaticResource PrimaryColor}"
-                TextColor="White" />
-        <Button Text="选择退款名单（.txt)" BackgroundColor="White"
-                TextColor="{StaticResource PrimaryColor}" BorderColor="#B5D4F4" />
+        <Button x:Name="PickBupanButton" Text="选择补盘名单（.xlsx）"
+                BackgroundColor="{StaticResource PrimaryColor}" TextColor="White"
+                Clicked="OnPickBupan" />
+        <Button x:Name="PickRefundButton" Text="选择退款名单（.txt）"
+                BackgroundColor="White" TextColor="{StaticResource PrimaryColor}"
+                BorderColor="#B5D4F4" Clicked="OnPickRefund" />
         <Frame Padding="14" BackgroundColor="White" BorderColor="#D8DEE6">
             <VerticalStackLayout Spacing="6">
                 <Label Text="账期确认" FontSize="15" FontAttributes="Bold"
@@ -22,7 +24,8 @@
                        FontSize="13" TextColor="{StaticResource TextSecondaryColor}" />
             </VerticalStackLayout>
         </Frame>
-        <Label Text="源文件保持只读，所有增减都记在本地账本。"
+        <Label x:Name="StatusLabel"
+               Text="源文件保持只读，所有增减都记在本地账本。"
                FontSize="12" TextColor="{StaticResource TextSecondaryColor}" />
     </VerticalStackLayout>
 </ContentPage>
