@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="PanPlugin.Mobile.Views.AliasManagerPage"
+             Title="名称与别名"
+             BackgroundColor="{StaticResource PageColor}">
+    <VerticalStackLayout Padding="16" Spacing="12">
+        <Label Text="客户主名" FontSize="13" TextColor="{StaticResource TextSecondaryColor}" />
+        <Entry x:Name="NameEntry" BackgroundColor="White"
+               TextColor="{StaticResource TextPrimaryColor}" />
+        <Label Text="别名（选中后可改名、删除或转移给其他客户）"
+               FontSize="13" TextColor="{StaticResource TextSecondaryColor}" />
+        <CollectionView x:Name="AliasList" SelectionMode="Single"
+                        SelectionChanged="OnAliasSelected" HeightRequest="190">
+            <CollectionView.ItemTemplate>
+                <DataTemplate>
+                    <Frame Padding="12" Margin="0,0,0,6" BackgroundColor="White" BorderColor="#D8DEE6">
+                        <Label Text="{Binding .}" FontSize="14"
+                               TextColor="{StaticResource TextPrimaryColor}" />
+                    </Frame>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+            <CollectionView.EmptyView>
+                <Label Text="暂无别名。" Padding="12" HorizontalTextAlignment="Center"
+                       TextColor="{StaticResource TextSecondaryColor}" />
+            </CollectionView.EmptyView>
+        </CollectionView>
+        <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+            <Button x:Name="AddButton" Grid.Column="0" Text="新增别名"
+                    BackgroundColor="White" TextColor="{StaticResource PrimaryColor}"
+                    BorderColor="#B5D4F4" Clicked="OnAdd" />
+            <Button x:Name="RenameButton" Grid.Column="1" Text="改名所选"
+                    BackgroundColor="White" TextColor="{StaticResource PrimaryColor}"
+                    BorderColor="#B5D4F4" Clicked="OnRename" />
+        </Grid>
+        <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+            <Button x:Name="DeleteButton" Grid.Column="0" Text="删除所选"
+                    BackgroundColor="White" TextColor="{StaticResource DangerColor}"
+                    BorderColor="#E6B5B0" Clicked="OnDelete" />
+            <Button x:Name="TransferButton" Grid.Column="1" Text="转移给客户"
+                    BackgroundColor="White" TextColor="{StaticResource DangerColor}"
+                    BorderColor="#E6B5B0" Clicked="OnTransfer" />
+        </Grid>
+        <Label Text="改名或移除的名字会加入排除名单，下次导入不会再自动绑回本客户。"
+               FontSize="12" TextColor="{StaticResource TextSecondaryColor}" />
+        <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+            <Button x:Name="CancelButton" Grid.Column="0" Text="取消"
+                    BackgroundColor="White" TextColor="{StaticResource TextSecondaryColor}"
+                    BorderColor="#D8DEE6" Clicked="OnCancel" />
+            <Button x:Name="SaveButton" Grid.Column="1" Text="保存"
+                    BackgroundColor="{StaticResource PrimaryColor}" TextColor="White"
+                    Clicked="OnSave" />
+        </Grid>
+    </VerticalStackLayout>
+</ContentPage>

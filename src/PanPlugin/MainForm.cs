@@ -994,10 +994,7 @@ namespace PanPlugin
 
                 try
                 {
-                    _store.Save();
-                    _store.Backup(3);              // 先留一份可还原的现场
-                    _store.MergeCustomer(source, target);
-                    _store.Save();
+                    MaintenanceService.MergeWithBackup(_store, source, target);
                     RefreshList();
                     RefreshDetail();
                     SetStatus("已把「" + source.Name + "」并入「" + target.Name + "」，转移 "
@@ -1213,30 +1210,7 @@ namespace PanPlugin
                 MessageBox.Show("请先在下方历史里选中要撤销的记录。", "生化盘插件");
                 return;
             }
-            var e = _lvHistory.SelectedItems[0].Tag as LedgerEntry;
-            var what = "";
-            if (e.Kind == EntryKind.RefundCredit || e.Kind == EntryKind.ManualCredit || e.Kind == EntryKind.Deduct)
-            {
-                _store.Entries.Remove(e);
-                what = "已撤销一笔金额记录";
-            }
-            else if (e.Kind == EntryKind.ManualBupan && !e.Processed)
-            {
-                _store.Entries.Remove(e);
-                what = "已删除手工补盘条目";
-            }
-            else if (e.Kind == EntryKind.ManualBupan && e.Processed)
-            {
-                e.Processed = false;
-                e.ProcessedAt = null;
-                what = "已撤销“已发”标记";
-            }
-            else
-            {
-                e.Processed = false;
-                e.ProcessedAt = null;
-                what = "已撤销补发标记";
-            }
+            var what = MaintenanceService.UndoEntry(_store, _lvHistory.SelectedItems[0].Tag as LedgerEntry);
             _store.Save();
             RefreshList();
             RefreshDetail();

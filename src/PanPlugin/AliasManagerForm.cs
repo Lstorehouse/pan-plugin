@@ -214,36 +214,9 @@ namespace PanPlugin
         /// <summary>确定时一次性写回；改主名时旧主名自动保留为别名，历史导入仍能命中。</summary>
         private void Apply()
         {
-            var newName = _txtName.Text.Trim();
-            var oldName = _customer.Name;
-            bool renamed = !string.Equals(newName, oldName, StringComparison.Ordinal);
-
-            _customer.Aliases.Clear();
-            foreach (var a in _aliases)
-                if (!_customer.Aliases.Contains(a, StringComparer.OrdinalIgnoreCase))
-                    _customer.Aliases.Add(a);
-
-            if (renamed)
-            {
-                _customer.Name = newName;
-                if (!_removed.Any(x => string.Equals(x, oldName, StringComparison.OrdinalIgnoreCase)))
-                    _customer.AddAlias(oldName);
-            }
-
-            // 从本客户解除的名字：加入排除名单，下次导入不再模糊推荐回本客户
-            foreach (var a in _removed)
-                _store.ExcludedLinks.Add(Store.LinkKey(a, _customer.Id));
-
-            // 转移目标：加上别名，并清掉该目标上可能存在的排除
-            foreach (var t in _transfers)
-            {
-                var target = _store.Customers.FirstOrDefault(c => c.Id == t.Value);
-                if (target == null) continue;
-                target.AddAlias(t.Key);
-                _store.ExcludedLinks.Remove(Store.LinkKey(t.Key, target.Id));
-                _customer.Aliases.RemoveAll(a => string.Equals(a, t.Key, StringComparison.OrdinalIgnoreCase));
-            }
-
+            MaintenanceService.ApplyAliasChanges(
+                _store, _customer, _txtName.Text.Trim(),
+                _aliases, _removed, _transfers);
             Changed = true;
         }
     }

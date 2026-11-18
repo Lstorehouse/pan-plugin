@@ -29,6 +29,7 @@
     <Compile Include="../PanPlugin/Store.cs" Link="Shared/Store.cs" />
     <Compile Include="../PanPlugin/ImportService.cs" Link="Shared/ImportService.cs" />
     <Compile Include="../PanPlugin/CustomerService.cs" Link="Shared/CustomerService.cs" />
+    <Compile Include="../PanPlugin/MaintenanceService.cs" Link="Shared/MaintenanceService.cs" />
   </ItemGroup>
 
   <ItemGroup>

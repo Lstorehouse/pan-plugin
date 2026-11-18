@@ -53,9 +53,31 @@
                                 BackgroundColor="White" TextColor="{StaticResource DangerColor}"
                                 BorderColor="#E6B5B0" Clicked="OnDeduct" />
                     </Grid>
+                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="8">
+                        <Button x:Name="UndoButton" Grid.Column="0" Text="撤销所选"
+                                FontSize="12" BackgroundColor="White"
+                                TextColor="{StaticResource TextSecondaryColor}"
+                                BorderColor="#D8DEE6" Clicked="OnUndo" />
+                        <Button x:Name="TransferButton" Grid.Column="1" Text="转移所选"
+                                FontSize="12" BackgroundColor="White"
+                                TextColor="{StaticResource PrimaryColor}"
+                                BorderColor="#B5D4F4" Clicked="OnTransfer" />
+                        <Button x:Name="TransferLogButton" Grid.Column="2" Text="转移记录"
+                                FontSize="12" BackgroundColor="White"
+                                TextColor="{StaticResource PrimaryColor}"
+                                BorderColor="#B5D4F4" Clicked="OnTransferLog" />
+                    </Grid>
                 </VerticalStackLayout>
             </Frame>
 
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                <Button x:Name="AliasButton" Grid.Column="0" Text="管理别名"
+                        BackgroundColor="White" TextColor="{StaticResource PrimaryColor}"
+                        BorderColor="#B5D4F4" Clicked="OnManageAliases" />
+                <Button x:Name="MergeButton" Grid.Column="1" Text="合并到另一客户"
+                        BackgroundColor="White" TextColor="{StaticResource DangerColor}"
+                        BorderColor="#E6B5B0" Clicked="OnMerge" />
+            </Grid>
             <Button x:Name="ArchiveButton" Text="归档客户"
                     BackgroundColor="White" TextColor="{StaticResource DangerColor}"
                     BorderColor="#E6B5B0" Clicked="OnArchive" />

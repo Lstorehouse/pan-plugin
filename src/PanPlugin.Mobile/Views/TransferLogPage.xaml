@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="PanPlugin.Mobile.Views.TransferLogPage"
+             Title="转移记录"
+             BackgroundColor="{StaticResource PageColor}">
+    <VerticalStackLayout Padding="16" Spacing="12">
+        <Label Text="每次转移生成一条日志；撤销会把该批记录退回原客户。已被再次转移或已删除的记录会自动跳过。"
+               FontSize="13" TextColor="{StaticResource TextSecondaryColor}" />
+        <CollectionView x:Name="TransferList" SelectionMode="Single"
+                        SelectionChanged="OnBatchSelected">
+            <CollectionView.ItemTemplate>
+                <DataTemplate>
+                    <Frame Padding="12" Margin="0,0,0,8" BackgroundColor="White" BorderColor="#D8DEE6">
+                        <Label Text="{Binding Text}" FontSize="13"
+                               TextColor="{StaticResource TextPrimaryColor}" />
+                    </Frame>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+            <CollectionView.EmptyView>
+                <Label Text="还没有账目转移记录。" Padding="16" HorizontalTextAlignment="Center"
+                       TextColor="{StaticResource TextSecondaryColor}" />
+            </CollectionView.EmptyView>
+        </CollectionView>
+        <Button x:Name="UndoButton" Text="撤销所选转移" IsEnabled="False"
+                BackgroundColor="{StaticResource PrimaryColor}" TextColor="White"
+                Clicked="OnUndoBatch" />
+    </VerticalStackLayout>
+</ContentPage>
