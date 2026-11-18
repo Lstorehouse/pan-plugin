@@ -17,9 +17,9 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Install MAUI Android workload
+      - name: Install workloads required by the project
         shell: pwsh
-        run: dotnet workload install maui-android --skip-manifest-update
+        run: dotnet workload restore src/PanPlugin.Mobile/PanPlugin.Mobile.csproj
 
       - name: Build APK (Debug, internal testing)
         shell: pwsh
