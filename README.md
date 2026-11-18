@@ -75,15 +75,15 @@ Win7+ 单机桌面程序：读取每月**补盘名单（xlsx）**与**退款名�
 
 无需本地安装任何开发环境：push 到 GitHub 后，Actions 自动在云端编译，到仓库 **Actions → build → Artifacts** 下载 `PanPlugin-win7`（解压后运行 `PanPlugin.exe`）。
 
-## Android 版（M2：本地账本 + 导入/备份）
+## Android 版（M3：客户搜索 + 详情 + 手工记账）
 
-同一仓库的 `src/PanPlugin.Mobile/` 是 .NET MAUI 项目，只构建 Android。当前为 **M2**：桌面端业务源码通过 `<Compile Include="../PanPlugin/...">` 链接，规则只有一份；账本存在 App 私有目录，可从微信/文件管理器选择 xlsx/txt 导入，并导出/恢复备份 JSON。客户搜索、详情与手工记账仍将在 M3 接入。
+同一仓库的 `src/PanPlugin.Mobile/` 是 .NET MAUI 项目，只构建 Android。当前为 **M3**：在 M2 的本地账本与导入/备份基础上，客户页可按主名/别名搜索，点进客户后查看待补清单与历史账目，支持勾选标记补发、手工新增补盘、手工增加抵扣、进货抵扣与归档/恢复。
 
 - **构建**：push 到 `main` 后，Actions 的 `build-android` 工作流安装 `maui-android` workload、编译 Debug APK，上传为 `PanPlugin-Android-M1` 产物。
 - **安装**：下载 APK 传到手机直接安装（Android 7.0 / API 24 以上）；首次安装需在手机上允许「安装未知来源应用」。
 - **签名**：目前用 Android 默认调试签名，仅适合内测；正式发布时再换成你自己的发布 keystore。
 - **数据**：账本为 App 私有目录下的 `store.json`，备份为同目录 `Backups/store-*.json`，最多保留 3 份；导出/恢复通过系统分享与文件选择器完成，源文件永不改写。
-- **共享边界**：`Model.cs` / `Period.cs`（纯逻辑） / `Parsers.cs` / `Store.cs` / `ImportService.cs` 为两端共用；`Period.UI.cs` 与所有 `*Form.cs` 只留在桌面端。详见 ADR-0010。
+- **共享边界**：`Model.cs` / `Period.cs`（纯逻辑） / `Parsers.cs` / `Store.cs` / `ImportService.cs` / `CustomerService.cs` 为两端共用；`Period.UI.cs` 与所有 `*Form.cs` 只留在桌面端。详见 ADR-0010、ADR-0011。
 - **既定路线**：Android 单机 + 从微信/文件管理器选文件 + 本地账本与电脑通过备份 JSON 互传；不引入账号和服务器。
 
 ## 开发

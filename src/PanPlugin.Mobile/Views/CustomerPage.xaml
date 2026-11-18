@@ -5,26 +5,39 @@
              Title="客户"
              BackgroundColor="{StaticResource PageColor}">
     <VerticalStackLayout Padding="16" Spacing="12">
-        <Label Text="客户详情"
-               FontSize="22" FontAttributes="Bold"
+        <Label Text="客户" FontSize="24" FontAttributes="Bold"
                TextColor="{StaticResource TextPrimaryColor}" />
-        <Label Text="M1 骨架：从首页点进客户后，这里用分栏显示待补清单与历史账目。"
-               FontSize="13" TextColor="{StaticResource TextSecondaryColor}" />
-        <Frame Padding="14" BackgroundColor="White" BorderColor="#D8DEE6">
-            <VerticalStackLayout Spacing="6">
-                <Label Text="待补清单" FontSize="15" FontAttributes="Bold"
-                       TextColor="{StaticResource DangerColor}" />
-                <Label Text="勾选标记已补发、手工新增补盘将在这里操作。"
-                       FontSize="13" TextColor="{StaticResource TextSecondaryColor}" />
-            </VerticalStackLayout>
-        </Frame>
-        <Frame Padding="14" BackgroundColor="White" BorderColor="#D8DEE6">
-            <VerticalStackLayout Spacing="6">
-                <Label Text="历史账目" FontSize="15" FontAttributes="Bold"
-                       TextColor="{StaticResource PrimaryColor}" />
-                <Label Text="撤销、转移账目、增减抵扣将在这里操作。"
-                       FontSize="13" TextColor="{StaticResource TextSecondaryColor}" />
-            </VerticalStackLayout>
-        </Frame>
+        <SearchBar x:Name="SearchBar" Placeholder="输入客户名或别名…"
+                   BackgroundColor="White" TextChanged="OnSearchChanged" />
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <Label x:Name="SummaryLabel" Text="本地账本"
+                   FontSize="13" TextColor="{StaticResource TextSecondaryColor}"
+                   VerticalOptions="Center" />
+            <Button x:Name="ArchivedButton" Grid.Column="1" Text="显示已归档"
+                    FontSize="12" Padding="10,6" BackgroundColor="White"
+                    TextColor="{StaticResource PrimaryColor}"
+                    BorderColor="#B5D4F4" Clicked="OnToggleArchived" />
+        </Grid>
+        <CollectionView x:Name="CustomerList" SelectionMode="Single"
+                        SelectionChanged="OnCustomerSelected">
+            <CollectionView.ItemTemplate>
+                <DataTemplate>
+                    <Frame Padding="14" Margin="0,0,0,8" BackgroundColor="White"
+                           BorderColor="#D8DEE6">
+                        <VerticalStackLayout Spacing="4">
+                            <Label Text="{Binding Name}" FontSize="16" FontAttributes="Bold"
+                                   TextColor="{StaticResource TextPrimaryColor}" />
+                            <Label Text="{Binding Detail}" FontSize="12"
+                                   TextColor="{StaticResource TextSecondaryColor}" />
+                        </VerticalStackLayout>
+                    </Frame>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+            <CollectionView.EmptyView>
+                <Label Text="没有匹配的客户。导入名单或手工新建后会出现在这里。"
+                       Padding="16" HorizontalTextAlignment="Center"
+                       TextColor="{StaticResource TextSecondaryColor}" />
+            </CollectionView.EmptyView>
+        </CollectionView>
     </VerticalStackLayout>
 </ContentPage>

@@ -605,20 +605,12 @@ namespace PanPlugin
 
         private List<LedgerEntry> PendingOf(string customerId)
         {
-            return _store.Entries.Where(e => e.CustomerId == customerId
-                && (e.Kind == EntryKind.BupanOrder || e.Kind == EntryKind.ManualBupan)
-                && !e.Processed).ToList();
+            return CustomerService.PendingOf(_store, customerId);
         }
 
         private Dictionary<DiscType, int> PendingByType(string customerId)
         {
-            var dict = new Dictionary<DiscType, int>();
-            foreach (var e in PendingOf(customerId))
-            {
-                if (!dict.ContainsKey(e.DiscType)) dict[e.DiscType] = 0;
-                dict[e.DiscType] += e.Qty;
-            }
-            return dict;
+            return CustomerService.PendingByType(_store, customerId);
         }
 
         private void RefreshList()
@@ -831,7 +823,7 @@ namespace PanPlugin
         /// <summary>历史「内容」列：业务描述（如 4张68元档）在外，金额放括号内；无描述时只显示金额。</summary>
         private static string MoneyText(string note, string money)
         {
-            return string.IsNullOrWhiteSpace(note) ? money : note.Trim() + "（" + money + "）";
+            return CustomerService.MoneyText(note, money);
         }
 
         private void SetStatus(string text)
@@ -1125,13 +1117,11 @@ namespace PanPlugin
                 if (MessageBox.Show(this, text, "生化盘插件",
                         MessageBoxButtons.YesNo, MessageBoxIcon.Question,
                         MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
-                _current.Archived = true;
-                _current.ArchivedAt = DateTime.Now;
+                CustomerService.Archive(_current);
             }
             else
             {
-                _current.Archived = false;
-                _current.ArchivedAt = null;
+                CustomerService.Unarchive(_current);
             }
 
             _store.Save();
@@ -1162,9 +1152,7 @@ namespace PanPlugin
             }
             foreach (var it in checkedItems)
             {
-                var e = it.Tag as LedgerEntry;
-                e.Processed = true;
-                e.ProcessedAt = DateTime.Now;
+                CustomerService.MarkProcessed(it.Tag as LedgerEntry);
             }
             _store.Save();
             RefreshList();
@@ -1180,18 +1168,8 @@ namespace PanPlugin
             string note;
             if (!PromptBupan(out type, out qty, out note)) return;
 
-            _store.Entries.Add(new LedgerEntry
-            {
-                Id = Guid.NewGuid().ToString("N"),
-                CustomerId = _current.Id,
-                Kind = EntryKind.ManualBupan,
-                DiscType = type,
-                Qty = qty,
-                Note = note,
-                Source = "手工",
-                Ref = null
-            });
-            ReviveIfArchived(_current);   // 归档客户手工新增补盘也会重新出现
+            var entry = CustomerService.NewManualBupan(_current, type, qty, note);
+            if (entry != null) _store.Entries.Add(entry);
             _store.Save();
             RefreshList();
             RefreshDetail();
@@ -1204,15 +1182,8 @@ namespace PanPlugin
             int amount;
             string note;
             if (!PromptAmount("手工增加抵扣", out amount, out note)) return;
-            _store.Entries.Add(new LedgerEntry
-            {
-                Id = Guid.NewGuid().ToString("N"),
-                CustomerId = _current.Id,
-                Kind = EntryKind.ManualCredit,
-                Amount = amount,
-                Note = note,
-                Source = "手工"
-            });
+            var entry = CustomerService.NewManualCredit(_current, amount, note);
+            if (entry != null) _store.Entries.Add(entry);
             _store.Save();
             RefreshList();
             RefreshDetail();
@@ -1226,15 +1197,8 @@ namespace PanPlugin
             int amount;
             string note;
             if (!PromptAmount("进货抵扣（扣减余额，当前 " + balance + " 元）", out amount, out note)) return;
-            _store.Entries.Add(new LedgerEntry
-            {
-                Id = Guid.NewGuid().ToString("N"),
-                CustomerId = _current.Id,
-                Kind = EntryKind.Deduct,
-                Amount = -amount,
-                Note = note,
-                Source = "手工"
-            });
+            var entry = CustomerService.NewDeduct(_current, amount, note);
+            if (entry != null) _store.Entries.Add(entry);
             _store.Save();
             RefreshList();
             RefreshDetail();

@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="PanPlugin.Mobile.Views.CustomerDetailPage"
+             BackgroundColor="{StaticResource PageColor}">
+    <ScrollView>
+        <VerticalStackLayout Padding="16" Spacing="12">
+            <Label x:Name="NameLabel" FontSize="22" FontAttributes="Bold"
+                   TextColor="{StaticResource TextPrimaryColor}" />
+            <Label x:Name="AliasLabel" FontSize="13"
+                   TextColor="{StaticResource TextSecondaryColor}" />
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                <Frame Grid.Column="0" Padding="14" BackgroundColor="White" BorderColor="#D8DEE6">
+                    <VerticalStackLayout Spacing="4">
+                        <Label Text="待补盘" FontSize="12" TextColor="{StaticResource TextSecondaryColor}" />
+                        <Label x:Name="PendingLabel" Text="0 张" FontSize="24" FontAttributes="Bold"
+                               TextColor="{StaticResource DangerColor}" />
+                    </VerticalStackLayout>
+                </Frame>
+                <Frame Grid.Column="1" Padding="14" BackgroundColor="White" BorderColor="#D8DEE6">
+                    <VerticalStackLayout Spacing="4">
+                        <Label Text="抵扣余额" FontSize="12" TextColor="{StaticResource TextSecondaryColor}" />
+                        <Label x:Name="BalanceLabel" Text="¥0" FontSize="24" FontAttributes="Bold"
+                               TextColor="{StaticResource PrimaryColor}" />
+                    </VerticalStackLayout>
+                </Frame>
+            </Grid>
+
+            <Frame Padding="14" BackgroundColor="White" BorderColor="#D8DEE6">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="待补清单" FontSize="15" FontAttributes="Bold"
+                           TextColor="{StaticResource DangerColor}" />
+                    <VerticalStackLayout x:Name="PendingRows" Spacing="6" />
+                    <Button x:Name="MarkDoneButton" Text="标记勾选为已补发"
+                            BackgroundColor="{StaticResource PrimaryColor}" TextColor="White"
+                            Clicked="OnMarkDone" />
+                    <Button x:Name="AddBupanButton" Text="手工新增补盘"
+                            BackgroundColor="White" TextColor="{StaticResource PrimaryColor}"
+                            BorderColor="#B5D4F4" Clicked="OnAddBupan" />
+                </VerticalStackLayout>
+            </Frame>
+
+            <Frame Padding="14" BackgroundColor="White" BorderColor="#D8DEE6">
+                <VerticalStackLayout Spacing="8">
+                    <Label Text="历史账目" FontSize="15" FontAttributes="Bold"
+                           TextColor="{StaticResource PrimaryColor}" />
+                    <VerticalStackLayout x:Name="HistoryRows" Spacing="6" />
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                        <Button x:Name="AddCreditButton" Grid.Column="0" Text="增加抵扣"
+                                BackgroundColor="White" TextColor="{StaticResource PrimaryColor}"
+                                BorderColor="#B5D4F4" Clicked="OnAddCredit" />
+                        <Button x:Name="DeductButton" Grid.Column="1" Text="进货抵扣"
+                                BackgroundColor="White" TextColor="{StaticResource DangerColor}"
+                                BorderColor="#E6B5B0" Clicked="OnDeduct" />
+                    </Grid>
+                </VerticalStackLayout>
+            </Frame>
+
+            <Button x:Name="ArchiveButton" Text="归档客户"
+                    BackgroundColor="White" TextColor="{StaticResource DangerColor}"
+                    BorderColor="#E6B5B0" Clicked="OnArchive" />
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

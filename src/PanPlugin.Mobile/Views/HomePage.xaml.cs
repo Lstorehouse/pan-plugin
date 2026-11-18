@@ -14,8 +14,7 @@ namespace PanPlugin.Mobile.Views
         {
             base.OnAppearing();
             var store = StoreService.Current;
-            var pending = store.Entries.Count(e =>
-                (e.Kind == EntryKind.BupanOrder || e.Kind == EntryKind.ManualBupan) && !e.Processed);
+            var pending = store.Customers.Sum(c => CustomerService.PendingQty(store, c.Id));
             var balance = store.Customers.Sum(c => store.CreditBalance(c.Id));
             PendingLabel.Text = pending + " 张";
             BalanceLabel.Text = "¥" + balance;
