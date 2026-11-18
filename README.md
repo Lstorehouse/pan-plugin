@@ -79,7 +79,7 @@ Win7+ 单机桌面程序：读取每月**补盘名单（xlsx）**与**退款名�
 
 同一仓库的 `src/PanPlugin.Mobile/` 是 .NET MAUI 项目，只构建 Android。当前是 **M1 骨架**：底部四个 Tab（首页 / 客户 / 导入 / 我的）可切换，页面内容为占位，**尚未接入业务数据、文件导入与备份**。
 
-- **构建**：push 到 `main` 后，Actions 的 `build-android` 工作流安装 android workload、编译 Debug APK，上传为 `PanPlugin-Android-M1` 产物。
+- **构建**：push 到 `main` 后，Actions 的 `build-android` 工作流安装 `maui-android` workload、编译 Debug APK，上传为 `PanPlugin-Android-M1` 产物。
 - **安装**：下载 APK 传到手机直接安装（Android 5.0 / API 21 以上）；首次安装需在手机上允许「安装未知来源应用」。
 - **签名**：M1 用 Android 默认调试签名，仅适合内测；正式发布时再换成你自己的发布 keystore。
 - **数据**：M1 不读写任何真实账本数据。M2 起通过 `<Compile Include="../PanPlugin/...">` 链接桌面版业务源码，规则只有一份。
